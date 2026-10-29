@@ -21,7 +21,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Server listens on `http://0.0.0.0:5050` (override with `PORT=...`).
+Server listens on `http://0.0.0.0:5050`. Override with `./start.sh 2100` or `PORT=2100`.
 
 ## Queue behaviour
 
