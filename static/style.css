@@ -835,7 +835,7 @@ body[data-qr-corner="top-right"] .badge {
 }
 
 .qr-label {
-  font: 750 calc(var(--qr-size, 18vmin) * 0.082) / 1.15 var(--font);
+  font: 750 calc(var(--qr-size, 18vmin) * 0.15) / 1.15 var(--font);
   text-align: center;
   letter-spacing: 0.01em;
   padding: 0 2%;

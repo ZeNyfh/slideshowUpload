@@ -95,7 +95,6 @@ QR_THEMES = [
 ]
 QR_THEME_NAMES = [t["name"] for t in QR_THEMES]
 QR_CORNERS = ("top-left", "top-right", "bottom-left", "bottom-right")
-QR_TARGETS = ("upload", "view")
 QR_SIZE_RANGE = (8, 40)  # percent of the display's shorter side
 QR_DEFAULTS = {
     "enabled": True,
@@ -103,7 +102,6 @@ QR_DEFAULTS = {
     "size": 18,
     "theme": "classic",
     "label": "Scan to add your photo",
-    "target": "upload",
     "base_url": "",
 }
 
@@ -233,10 +231,6 @@ def _validate_qr(raw: dict, current: dict) -> dict:
         qr["theme"] = raw["theme"]
     if "label" in raw:
         qr["label"] = " ".join(str(raw["label"] or "").split())[:60]
-    if "target" in raw:
-        if raw["target"] not in QR_TARGETS:
-            raise ValueError("Invalid QR link target")
-        qr["target"] = raw["target"]
     if "base_url" in raw:
         qr["base_url"] = _clean_base_url(raw["base_url"])
     return qr
@@ -270,10 +264,9 @@ def _lan_ip() -> str | None:
 
 
 def _qr_link(qr: dict, client_origin: str) -> str:
-    """Absolute URL the QR code should open on a guest's phone."""
-    path = "/upload" if qr["target"] == "upload" else "/view"
+    """Absolute URL the QR code should open on a guest's phone (the site root serves the upload page)."""
     if qr["base_url"]:
-        return qr["base_url"] + path
+        return qr["base_url"] + "/"
     parsed = urlparse(client_origin or "")
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         parsed = urlparse(request.host_url)
@@ -282,7 +275,7 @@ def _qr_link(qr: dict, client_origin: str) -> str:
         ip = _lan_ip()
         if ip:
             origin = f"{parsed.scheme}://{ip}" + (f":{parsed.port}" if parsed.port else "")
-    return origin + path
+    return origin + "/"
 
 
 def _load_state() -> dict:
@@ -744,13 +737,11 @@ def api_config():
 
 @app.get("/api/qr-link")
 def api_qr_link():
-    """Resolve the URL to encode. target/base_url args let the admin preview unsaved settings."""
+    """Resolve the URL to encode. A base_url arg lets the admin preview an unsaved Public URL."""
     with _lock:
         qr = dict(_load_state()["qr"])
     try:
-        qr = _validate_qr(
-            {k: request.args[k] for k in ("target", "base_url") if k in request.args}, qr
-        )
+        qr = _validate_qr({k: request.args[k] for k in ("base_url",) if k in request.args}, qr)
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     return jsonify({"ok": True, "url": _qr_link(qr, request.args.get("origin", ""))})

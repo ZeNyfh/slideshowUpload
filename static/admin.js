@@ -22,7 +22,6 @@
   const qrSize = document.getElementById("qrSize");
   const qrSizeOut = document.getElementById("qrSizeOut");
   const qrLabel = document.getElementById("qrLabel");
-  const qrTarget = document.getElementById("qrTarget");
   const qrBaseUrl = document.getElementById("qrBaseUrl");
   const qrScreen = document.getElementById("qrScreen");
   const qrPreview = document.getElementById("qrPreview");
@@ -121,7 +120,6 @@
     qrTheme.value = data.qr.theme;
     qrSize.value = data.qr.size;
     qrLabel.value = data.qr.label;
-    qrTarget.value = data.qr.target;
     qrBaseUrl.value = data.qr.base_url;
     updateQrPreview();
   }
@@ -133,7 +131,6 @@
       theme: qrTheme.value,
       size: Number(qrSize.value),
       label: qrLabel.value,
-      target: qrTarget.value,
       base_url: qrBaseUrl.value.trim(),
     };
   }
@@ -147,7 +144,7 @@
       qrScreen.classList.toggle("is-off", !qr.enabled);
       // Display uses vmin of a 16:9 screen, i.e. a share of the preview's height
       qrPreview.style.setProperty("--qr-size", `${(qr.size / 100) * qrScreen.clientHeight}px`);
-      const params = new URLSearchParams({ origin: window.location.origin, target: qr.target, base_url: qr.base_url });
+      const params = new URLSearchParams({ origin: window.location.origin, base_url: qr.base_url });
       try {
         const res = await fetch(`/api/qr-link?${params}`, { cache: "no-store" });
         const data = await res.json();
@@ -160,7 +157,7 @@
     }, 120);
   }
 
-  [qrEnabled, qrCorner, qrTheme, qrSize, qrLabel, qrTarget, qrBaseUrl].forEach((el) =>
+  [qrEnabled, qrCorner, qrTheme, qrSize, qrLabel, qrBaseUrl].forEach((el) =>
     el.addEventListener("input", () => {
       qrDirty = true;
       setMsg(qrStatus, "Unsaved changes");

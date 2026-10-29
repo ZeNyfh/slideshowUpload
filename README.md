@@ -10,7 +10,7 @@ Phone-friendly image upload + fullscreen slideshow for events.
 | `/view` | Display machine: fullscreen slideshow. |
 | `/admin` | Bulk upload, delete, set seconds-per-slide (password required). |
 
-Pages are intentionally isolated — no links between them. `/view` shows a QR code pointing guests at `/upload` (see below).
+Pages are intentionally isolated — no links between them. `/view` shows a QR code pointing guests at the site root (which serves the upload page; see below).
 
 Copy `.env.example` to `.env` and set `ADMIN_PASSWORD` (and preferably `SECRET_KEY`).
 
@@ -38,9 +38,9 @@ Server listens on `http://0.0.0.0:5050`. Override with `./start.sh 2100` or `POR
 
 ## QR code
 
-`/view` overlays a QR code (bottom-right by default). In `/admin` you can toggle it, pick the corner, size (8–40% of screen height), label and theme (classic, soft, pumpkin, ghost, blood, witch, neon, bats), and whether it opens `/upload` or `/view`.
+`/view` overlays a QR code (bottom-right by default). In `/admin` you can toggle it, pick the corner, size (8–40% of screen height), label and theme (classic, soft, pumpkin, ghost, blood, witch, neon, bats).
 
-The link is built from the address the display uses. If the display is opened as `localhost`, the server's LAN IP is used instead so phones can reach it. Set **Public URL** in `/admin` when guests should use a different address (e.g. a domain or tunnel).
+The code opens the site root (e.g. `http://192.168.1.70:8123/`), built from the address the display uses. If the display is opened as `localhost`, the server's LAN IP is used instead so phones can reach it. Set **Public URL** in `/admin` when guests should use a different address (e.g. a domain or tunnel).
 
 ## Transitions
 

@@ -1351,7 +1351,7 @@
     qrBox.style.setProperty("--qr-size", `${qr.size}vmin`);
     qrBox.dataset.corner = qr.corner;
     document.body.dataset.qrCorner = qr.corner;
-    const key = JSON.stringify([qr.theme, qr.label, qr.target, qr.base_url]);
+    const key = JSON.stringify([qr.theme, qr.label, qr.base_url]);
     if (key === qrKey) {
       qrBox.hidden = false;
       return;
