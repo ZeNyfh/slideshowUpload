@@ -16,7 +16,7 @@ from flask import (
     request,
     send_from_directory,
 )
-from PIL import Image
+from PIL import Image, ImageOps
 from werkzeug.utils import secure_filename
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -111,22 +111,27 @@ def _store_image(file_storage, source: str, priority: bool) -> dict:
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     file_storage.save(dest)
 
-    # Normalize to a browser-friendly JPEG when needed (e.g. HEIC / odd formats)
+    # Apply EXIF orientation (phone cameras) then bake pixels so /view is upright
     try:
         with Image.open(dest) as im:
-            im = im.convert("RGB") if im.mode not in ("RGB", "L") else im
-            if ext in {".heic", ".heif"} or im.format not in {"JPEG", "PNG", "GIF", "WEBP"}:
+            fmt = (im.format or "").upper()
+            im = ImageOps.exif_transpose(im)
+            needs_jpeg = ext in {".heic", ".heif"} or fmt not in {"JPEG", "PNG", "GIF", "WEBP"}
+            if needs_jpeg or im.mode not in ("RGB", "L", "RGBA", "P"):
+                if im.mode not in ("RGB", "L"):
+                    im = im.convert("RGB")
                 filename = f"{image_id}.jpg"
                 new_dest = UPLOAD_DIR / filename
-                im.convert("RGB").save(new_dest, "JPEG", quality=88)
+                im.save(new_dest, "JPEG", quality=90)
                 if new_dest != dest and dest.exists():
                     dest.unlink(missing_ok=True)
-                dest = new_dest
             else:
-                # Re-save to strip EXIF orientation issues for display
-                fmt = im.format or "JPEG"
-                save_kwargs = {"quality": 88} if fmt == "JPEG" else {}
-                im.save(dest, fmt, **save_kwargs)
+                save_fmt = fmt if fmt in {"JPEG", "PNG", "GIF", "WEBP"} else "JPEG"
+                if save_fmt == "JPEG" and im.mode not in ("RGB", "L"):
+                    im = im.convert("RGB")
+                save_kwargs = {"quality": 90} if save_fmt == "JPEG" else {}
+                # Re-save without Orientation tag so browsers don't double-rotate
+                im.save(dest, save_fmt, **save_kwargs)
     except Exception:
         # Keep original bytes if Pillow cannot process
         pass
