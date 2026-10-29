@@ -1,0 +1,31 @@
+---
+description: Expose new configurable features through the admin panel
+alwaysApply: true
+---
+
+# Admin panel for new features
+
+When adding a feature that operators might want to configure, toggle, or inspect, expose it on `/admin` in the same change — do not leave it hardcoded or view-only unless it is intentionally guest-facing only.
+
+## What belongs in admin
+
+- Slideshow behaviour (duration, transitions, queue rules, captions)
+- Upload/processing options that affect the event (limits, compression, moderation)
+- Anything stored in `data/state.json` or similar shared config
+
+## What usually does not
+
+- Pure guest UX polish on `/upload` with no operator knob
+- One-off bug fixes with no new setting
+
+## How to wire it
+
+1. Persist config in state (or env only if truly deploy-time).
+2. Add/extend admin API under `/api/admin/...` with `require_admin`.
+3. Add UI in `templates/admin.html` + `static/admin.js`, matching existing panels.
+4. Have `/view` (and related clients) read the setting from the API/config response.
+
+```text
+❌ BAD: hardcode transition list only in view.js with no admin control
+✅ GOOD: store enabled transitions / mode in state; admin toggles; /view consumes config
+```

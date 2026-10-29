@@ -18,15 +18,100 @@
     </header>
 
     <section class="panel">
-      <h2>Slide duration</h2>
+      <h2>Slideshow</h2>
       <div class="row">
         <label class="field">
           Seconds per image
           <input type="number" id="duration" min="1" max="3600" step="1" value="5" />
         </label>
+        <label class="field">
+          Photo order
+          <select id="playbackOrder">
+            <option value="sequence">In order (newest to oldest, loop)</option>
+            <option value="random">Shuffle (each photo once per pass)</option>
+            <option value="smart">Smart (random, favours newer photos)</option>
+          </select>
+        </label>
         <button type="button" class="btn btn-primary" id="saveDuration">Save</button>
         <span class="status" id="durationStatus"></span>
       </div>
+      <p class="muted" style="margin-top: 10px;">New guest uploads always play next, whatever the order.</p>
+    </section>
+
+    <section class="panel">
+      <h2>QR code</h2>
+      <div class="qr-admin">
+        <div class="qr-controls">
+          <label class="check-field">
+            <input type="checkbox" id="qrEnabled" />
+            Show QR code on the slideshow
+          </label>
+          <div class="row">
+            <label class="field">
+              Corner
+              <select id="qrCorner">
+                <option value="top-left">Top left</option>
+                <option value="top-right">Top right</option>
+                <option value="bottom-left">Bottom left</option>
+                <option value="bottom-right">Bottom right</option>
+              </select>
+            </label>
+            <label class="field">
+              Theme
+              <select id="qrTheme"></select>
+            </label>
+          </div>
+          <label class="field">
+            <span>Size: <span id="qrSizeOut">18%</span> of screen height</span>
+            <input type="range" id="qrSize" min="8" max="40" step="1" value="18" />
+          </label>
+          <label class="field">
+            Label under the code
+            <input type="text" id="qrLabel" maxlength="60" placeholder="(no label)" />
+          </label>
+          <label class="field">
+            Link opens
+            <select id="qrTarget">
+              <option value="upload">Upload page (guests add photos)</option>
+              <option value="view">Slideshow (/view)</option>
+            </select>
+          </label>
+          <label class="field">
+            Public URL (optional)
+            <input type="text" id="qrBaseUrl" placeholder="Auto: this server's network address" />
+          </label>
+          <div class="row">
+            <button type="button" class="btn btn-primary" id="saveQr">Save QR code</button>
+            <span class="status" id="qrStatus"></span>
+          </div>
+        </div>
+        <div class="qr-preview-wrap">
+          <div class="qr-screen" id="qrScreen"><div id="qrPreview"></div></div>
+          <p class="muted qr-link">Opens: <span id="qrLinkText">…</span></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Transitions</h2>
+      <div class="row" style="margin-bottom: 14px;">
+        <label class="field">
+          Order
+          <select id="transitionMode">
+            <option value="random">Random (no repeats back-to-back)</option>
+            <option value="sequence">In order</option>
+          </select>
+        </label>
+        <button type="button" class="btn btn-secondary btn-small" data-preset="all">All</button>
+        <button type="button" class="btn btn-secondary btn-small" data-preset="spooky">Spooky only</button>
+        <button type="button" class="btn btn-secondary btn-small" data-preset="classic">Classic only</button>
+      </div>
+      <div id="transitionList"></div>
+      <div class="row" style="margin-top: 14px;">
+        <button type="button" class="btn btn-primary" id="saveTransitions">Save transitions</button>
+        <span class="status" id="transitionStatus"></span>
+      </div>
+      <p class="muted" style="margin-top: 10px;">Test one on the display with <code>/view?transition=bats</code> (use the name shown under each option).</p>
     </section>
 
     <section class="panel">
@@ -46,6 +131,8 @@
       <div class="grid" id="grid"></div>
     </section>
   </main>
+  <script src="/static/vendor/qrcode.js"></script>
+  <script src="/static/qr.js"></script>
   <script src="/static/admin.js"></script>
 </body>
 </html>

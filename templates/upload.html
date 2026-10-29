@@ -28,14 +28,25 @@
 
     <div id="uploadArea" class="upload-area is-locked" hidden>
       <h1>Upload an image</h1>
-      <p>Send one photo to the slideshow. New uploads show up first.</p>
-      <p class="muted" id="greeting"></p>
+      <p class="intro">Send one photo to the slideshow. New uploads show up first.</p>
+      <p class="greeting" id="greeting">
+        <span>Uploading as <strong id="greetingName"></strong></span>
+        <button type="button" class="link-btn" id="changeNameBtn">Change</button>
+      </p>
 
       <div class="preview" id="preview">
         <img id="previewImg" alt="Selected preview" />
       </div>
 
-      <div class="actions">
+      <div class="webcam" id="webcamPanel" hidden>
+        <video id="webcamVideo" autoplay playsinline muted></video>
+        <div class="webcam-actions">
+          <button type="button" class="btn btn-primary" id="webcamCaptureBtn">Capture</button>
+          <button type="button" class="btn btn-secondary" id="webcamCancelBtn">Cancel</button>
+        </div>
+      </div>
+
+      <div class="actions" id="uploadActions">
         <button type="button" class="btn btn-primary" id="cameraBtn">Take a picture</button>
         <button type="button" class="btn btn-secondary" id="fileBtn">Upload an image</button>
         <button type="button" class="btn btn-primary" id="sendBtn" hidden>Send to slideshow</button>
