@@ -1,4 +1,13 @@
 (() => {
+  const NAME_KEY = "slideshowUpload.uploaderName";
+  const NAME_TTL_MS = 24 * 60 * 60 * 1000;
+
+  const nameInput = document.getElementById("nameInput");
+  const saveNameBtn = document.getElementById("saveNameBtn");
+  const nameStatus = document.getElementById("nameStatus");
+  const uploadArea = document.getElementById("uploadArea");
+  const gateMsg = document.getElementById("gateMsg");
+  const greeting = document.getElementById("greeting");
   const cameraBtn = document.getElementById("cameraBtn");
   const fileBtn = document.getElementById("fileBtn");
   const sendBtn = document.getElementById("sendBtn");
@@ -10,10 +19,80 @@
 
   let selectedFile = null;
   let busy = false;
+  let uploaderName = "";
 
   function setStatus(msg, kind) {
     status.textContent = msg || "";
     status.className = "status" + (kind ? ` ${kind}` : "");
+  }
+
+  function setNameStatus(msg, kind) {
+    nameStatus.textContent = msg || "";
+    nameStatus.className = "status" + (kind ? ` ${kind}` : "");
+  }
+
+  function normalizeName(raw) {
+    return String(raw || "").trim().replace(/\s+/g, " ").slice(0, 40);
+  }
+
+  function readCachedName() {
+    try {
+      const raw = localStorage.getItem(NAME_KEY);
+      if (!raw) return "";
+      const data = JSON.parse(raw);
+      if (!data || typeof data.name !== "string" || typeof data.expires !== "number") {
+        localStorage.removeItem(NAME_KEY);
+        return "";
+      }
+      if (Date.now() > data.expires) {
+        localStorage.removeItem(NAME_KEY);
+        return "";
+      }
+      return normalizeName(data.name);
+    } catch (_) {
+      localStorage.removeItem(NAME_KEY);
+      return "";
+    }
+  }
+
+  function writeCachedName(name) {
+    const payload = {
+      name,
+      expires: Date.now() + NAME_TTL_MS,
+    };
+    localStorage.setItem(NAME_KEY, JSON.stringify(payload));
+  }
+
+  function applyNameGate() {
+    const ready = Boolean(uploaderName);
+    uploadArea.hidden = !ready;
+    uploadArea.classList.toggle("is-locked", !ready);
+    gateMsg.hidden = ready;
+    cameraBtn.disabled = !ready || busy;
+    fileBtn.disabled = !ready || busy;
+    if (ready) {
+      greeting.textContent = `Uploading as ${uploaderName}`;
+      saveNameBtn.textContent = "Update name";
+    } else {
+      greeting.textContent = "";
+      saveNameBtn.textContent = "Save name";
+      resetSelection();
+    }
+  }
+
+  function saveName() {
+    const name = normalizeName(nameInput.value);
+    if (name.length < 1) {
+      setNameStatus("Please enter your name.", "err");
+      uploaderName = "";
+      applyNameGate();
+      return;
+    }
+    uploaderName = name;
+    nameInput.value = name;
+    writeCachedName(name);
+    setNameStatus("Name saved for 24 hours.", "ok");
+    applyNameGate();
   }
 
   function resetSelection() {
@@ -26,6 +105,10 @@
   }
 
   function onPicked(file) {
+    if (!uploaderName) {
+      setStatus("Save your name first.", "err");
+      return;
+    }
     if (!file || !file.type.startsWith("image/")) {
       setStatus("Please choose an image.", "err");
       return;
@@ -39,13 +122,21 @@
     setStatus("Ready to send.", "");
   }
 
+  saveNameBtn.addEventListener("click", saveName);
+  nameInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      saveName();
+    }
+  });
+
   cameraBtn.addEventListener("click", () => {
-    if (busy) return;
+    if (busy || !uploaderName) return;
     cameraInput.click();
   });
 
   fileBtn.addEventListener("click", () => {
-    if (busy) return;
+    if (busy || !uploaderName) return;
     fileInput.click();
   });
 
@@ -61,6 +152,15 @@
 
   sendBtn.addEventListener("click", async () => {
     if (!selectedFile || busy) return;
+    const name = normalizeName(nameInput.value) || uploaderName;
+    if (!name) {
+      setStatus("Save your name first.", "err");
+      applyNameGate();
+      return;
+    }
+    uploaderName = name;
+    writeCachedName(name);
+
     busy = true;
     cameraBtn.disabled = true;
     fileBtn.disabled = true;
@@ -69,6 +169,7 @@
 
     const body = new FormData();
     body.append("image", selectedFile, selectedFile.name || "photo.jpg");
+    body.append("uploader_name", name);
 
     try {
       const res = await fetch("/api/upload", { method: "POST", body });
@@ -82,9 +183,15 @@
       setStatus(err.message || "Upload failed", "err");
     } finally {
       busy = false;
-      cameraBtn.disabled = false;
-      fileBtn.disabled = false;
+      applyNameGate();
       sendBtn.disabled = false;
     }
   });
+
+  uploaderName = readCachedName();
+  if (uploaderName) {
+    nameInput.value = uploaderName;
+    setNameStatus("Welcome back — name remembered for 24 hours.", "ok");
+  }
+  applyNameGate();
 })();

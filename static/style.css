@@ -47,6 +47,41 @@ body.upload-page {
   gap: 18px;
 }
 
+.name-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: rgba(23, 28, 36, 0.85);
+}
+
+.name-bar .field {
+  margin: 0;
+}
+
+.name-bar .field input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #0c0f14;
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.upload-area {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.upload-area.is-locked {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
 .upload-shell h1 {
   margin: 0;
   font-size: clamp(1.8rem, 7vw, 2.35rem);

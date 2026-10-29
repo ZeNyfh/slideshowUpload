@@ -9,20 +9,42 @@
 </head>
 <body class="upload-page">
   <main class="upload-shell">
-    <h1>Upload an image</h1>
-    <p>Send one photo to the slideshow. New uploads show up first.</p>
+    <section class="name-bar" id="nameBar">
+      <label class="field" for="nameInput">
+        Your name
+        <input
+          type="text"
+          id="nameInput"
+          name="name"
+          maxlength="40"
+          autocomplete="nickname"
+          placeholder="Enter your name"
+          required
+        />
+      </label>
+      <button type="button" class="btn btn-secondary" id="saveNameBtn">Save name</button>
+      <p class="status" id="nameStatus" aria-live="polite"></p>
+    </section>
 
-    <div class="preview" id="preview">
-      <img id="previewImg" alt="Selected preview" />
+    <div id="uploadArea" class="upload-area is-locked" hidden>
+      <h1>Upload an image</h1>
+      <p>Send one photo to the slideshow. New uploads show up first.</p>
+      <p class="muted" id="greeting"></p>
+
+      <div class="preview" id="preview">
+        <img id="previewImg" alt="Selected preview" />
+      </div>
+
+      <div class="actions">
+        <button type="button" class="btn btn-primary" id="cameraBtn">Take a picture</button>
+        <button type="button" class="btn btn-secondary" id="fileBtn">Upload an image</button>
+        <button type="button" class="btn btn-primary" id="sendBtn" hidden>Send to slideshow</button>
+      </div>
+
+      <p class="status" id="status" aria-live="polite"></p>
     </div>
 
-    <div class="actions">
-      <button type="button" class="btn btn-primary" id="cameraBtn">Take a picture</button>
-      <button type="button" class="btn btn-secondary" id="fileBtn">Upload an image</button>
-      <button type="button" class="btn btn-primary" id="sendBtn" hidden>Send to slideshow</button>
-    </div>
-
-    <p class="status" id="status" aria-live="polite"></p>
+    <p class="status" id="gateMsg">Enter your name above to unlock uploading.</p>
 
     <input
       class="hidden-input"
