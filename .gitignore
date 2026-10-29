@@ -10,3 +10,4 @@ data/state.json
 dist/
 build/
 .DS_Store
+/graphify-out
