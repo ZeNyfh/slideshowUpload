@@ -15,11 +15,13 @@
 
   function showImage(url, fromPriority) {
     empty.style.display = "none";
-    slide.classList.remove("show");
     const next = new Image();
     next.onload = () => {
+      slide.classList.remove("show");
       slide.src = url;
-      requestAnimationFrame(() => slide.classList.add("show"));
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => slide.classList.add("show"));
+      });
       if (fromPriority) {
         badge.classList.add("show");
         setTimeout(() => badge.classList.remove("show"), 1600);
