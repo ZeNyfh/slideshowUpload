@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0e1116" />
+  <title>Upload an image</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body class="upload-page">
+  <main class="upload-shell">
+    <h1>Upload an image</h1>
+    <p>Send one photo to the slideshow. New uploads show up first.</p>
+
+    <div class="preview" id="preview">
+      <img id="previewImg" alt="Selected preview" />
+    </div>
+
+    <div class="actions">
+      <button type="button" class="btn btn-primary" id="cameraBtn">Take a picture</button>
+      <button type="button" class="btn btn-secondary" id="fileBtn">Upload an image</button>
+      <button type="button" class="btn btn-primary" id="sendBtn" hidden>Send to slideshow</button>
+    </div>
+
+    <p class="status" id="status" aria-live="polite"></p>
+
+    <input
+      class="hidden-input"
+      id="cameraInput"
+      type="file"
+      accept="image/*"
+      capture="environment"
+    />
+    <input
+      class="hidden-input"
+      id="fileInput"
+      type="file"
+      accept="image/*"
+    />
+  </main>
+  <script src="/static/upload.js"></script>
+</body>
+</html>

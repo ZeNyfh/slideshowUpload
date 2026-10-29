@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0e1116" />
+  <title>Slideshow admin</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body class="admin-page">
+  <main class="admin-wrap">
+    <header>
+      <h1>Slideshow admin</h1>
+      <p class="muted">Bulk add photos, remove them, and set how long each slide stays on screen.</p>
+    </header>
+
+    <section class="panel">
+      <h2>Slide duration</h2>
+      <div class="row">
+        <label class="field">
+          Seconds per image
+          <input type="number" id="duration" min="1" max="3600" step="1" value="5" />
+        </label>
+        <button type="button" class="btn btn-primary" id="saveDuration">Save</button>
+        <span class="status" id="durationStatus"></span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Add many images</h2>
+      <div class="dropzone" id="dropzone" tabindex="0">
+        Drop images here, or click to choose multiple files
+      </div>
+      <input class="hidden-input" id="bulkInput" type="file" accept="image/*" multiple />
+      <p class="status" id="uploadStatus" aria-live="polite"></p>
+    </section>
+
+    <section class="panel">
+      <div class="row" style="justify-content: space-between; margin-bottom: 12px;">
+        <h2 style="margin: 0;">All photos <span class="muted" id="count"></span></h2>
+        <button type="button" class="btn danger-btn" id="clearAll">Delete all</button>
+      </div>
+      <div class="grid" id="grid"></div>
+    </section>
+  </main>
+  <script src="/static/admin.js"></script>
+</body>
+</html>
