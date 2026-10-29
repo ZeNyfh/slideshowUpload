@@ -14,6 +14,18 @@
     currentEl = null;
   }
 
+  function formatCaption(image) {
+    const name = (image && image.uploader_name) || "Anonymous";
+    let time = "--:--";
+    if (image && image.created_at) {
+      const d = new Date(image.created_at);
+      if (!Number.isNaN(d.getTime())) {
+        time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+      }
+    }
+    return `${time} - ${name}`;
+  }
+
   function showEmpty() {
     empty.style.display = "grid";
     if (currentEl) {
@@ -28,12 +40,21 @@
     badge.classList.remove("show");
   }
 
-  function showImage(url, fromPriority) {
+  function showImage(image, fromPriority) {
     return new Promise((resolve) => {
       empty.style.display = "none";
-      const incoming = document.createElement("img");
-      incoming.className = "slide enter";
-      incoming.alt = "";
+      const frame = document.createElement("div");
+      frame.className = "slide enter";
+
+      const img = document.createElement("img");
+      img.alt = "";
+
+      const meta = document.createElement("p");
+      meta.className = "slide-meta";
+      meta.textContent = formatCaption(image);
+
+      frame.appendChild(img);
+      frame.appendChild(meta);
 
       const finish = () => {
         if (fromPriority) {
@@ -43,14 +64,13 @@
         setTimeout(resolve, TRANSITION_MS);
       };
 
-      incoming.onload = () => {
-        stage.appendChild(incoming);
-        // Force layout so the enter → current transition runs
-        void incoming.offsetWidth;
-        incoming.classList.remove("enter");
-        incoming.classList.add("current");
+      img.onload = () => {
+        stage.appendChild(frame);
+        void frame.offsetWidth;
+        frame.classList.remove("enter");
+        frame.classList.add("current");
 
-        if (currentEl && currentEl !== incoming) {
+        if (currentEl && currentEl !== frame) {
           const old = currentEl;
           old.classList.remove("current");
           old.classList.add("exit");
@@ -59,12 +79,12 @@
           setTimeout(cleanup, TRANSITION_MS + 80);
         }
 
-        currentEl = incoming;
+        currentEl = frame;
         finish();
       };
 
-      incoming.onerror = () => resolve();
-      incoming.src = url;
+      img.onerror = () => resolve();
+      img.src = image.url;
     });
   }
 
@@ -82,7 +102,7 @@
         schedule(2000);
         return;
       }
-      await showImage(data.image.url, !!data.from_priority);
+      await showImage(data.image, !!data.from_priority);
       schedule(duration * 1000);
     } catch (_) {
       showEmpty();
