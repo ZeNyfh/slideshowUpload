@@ -91,7 +91,7 @@
     uploaderName = name;
     nameInput.value = name;
     writeCachedName(name);
-    setNameStatus("Name saved for 24 hours.", "ok");
+    setNameStatus("Name saved!", "ok");
     applyNameGate();
   }
 
