@@ -1,41 +1,76 @@
 (() => {
-  const slide = document.getElementById("slide");
+  const stage = document.getElementById("stage");
   const empty = document.getElementById("empty");
   const badge = document.getElementById("badge");
+  const TRANSITION_MS = 700;
+
   let timer = null;
   let duration = 5;
-  let showing = false;
+  let busy = false;
+  let currentEl = null;
+
+  function clearSlides() {
+    stage.querySelectorAll(".slide").forEach((el) => el.remove());
+    currentEl = null;
+  }
 
   function showEmpty() {
-    empty.style.display = "block";
-    slide.classList.remove("show");
-    slide.removeAttribute("src");
+    empty.style.display = "grid";
+    if (currentEl) {
+      const old = currentEl;
+      old.classList.remove("current");
+      old.classList.add("exit");
+      setTimeout(() => old.remove(), TRANSITION_MS + 80);
+      currentEl = null;
+    } else {
+      clearSlides();
+    }
     badge.classList.remove("show");
   }
 
   function showImage(url, fromPriority) {
-    empty.style.display = "none";
-    const next = new Image();
-    next.onload = () => {
-      slide.classList.remove("show");
-      slide.src = url;
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => slide.classList.add("show"));
-      });
-      if (fromPriority) {
-        badge.classList.add("show");
-        setTimeout(() => badge.classList.remove("show"), 1600);
-      }
-    };
-    next.onerror = () => {
-      schedule(800);
-    };
-    next.src = url;
+    return new Promise((resolve) => {
+      empty.style.display = "none";
+      const incoming = document.createElement("img");
+      incoming.className = "slide enter";
+      incoming.alt = "";
+
+      const finish = () => {
+        if (fromPriority) {
+          badge.classList.add("show");
+          setTimeout(() => badge.classList.remove("show"), 1600);
+        }
+        setTimeout(resolve, TRANSITION_MS);
+      };
+
+      incoming.onload = () => {
+        stage.appendChild(incoming);
+        // Force layout so the enter → current transition runs
+        void incoming.offsetWidth;
+        incoming.classList.remove("enter");
+        incoming.classList.add("current");
+
+        if (currentEl && currentEl !== incoming) {
+          const old = currentEl;
+          old.classList.remove("current");
+          old.classList.add("exit");
+          const cleanup = () => old.remove();
+          old.addEventListener("transitionend", cleanup, { once: true });
+          setTimeout(cleanup, TRANSITION_MS + 80);
+        }
+
+        currentEl = incoming;
+        finish();
+      };
+
+      incoming.onerror = () => resolve();
+      incoming.src = url;
+    });
   }
 
   async function tick() {
-    if (showing) return;
-    showing = true;
+    if (busy) return;
+    busy = true;
     try {
       const res = await fetch("/api/slideshow/next", { cache: "no-store" });
       const data = await res.json();
@@ -47,13 +82,13 @@
         schedule(2000);
         return;
       }
-      showImage(data.image.url, !!data.from_priority);
+      await showImage(data.image.url, !!data.from_priority);
       schedule(duration * 1000);
     } catch (_) {
       showEmpty();
       schedule(2500);
     } finally {
-      showing = false;
+      busy = false;
     }
   }
 
