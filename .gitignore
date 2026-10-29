@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+uploads/*
+!uploads/.gitkeep
+data/state.json
+.idea/
+*.egg-info/
+dist/
+build/
+.DS_Store
