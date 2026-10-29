@@ -131,7 +131,17 @@ def _allowed(filename: str) -> bool:
     return Path(filename).suffix.lower() in ALLOWED_EXTENSIONS
 
 
-def _store_image(file_storage, source: str, priority: bool) -> dict:
+def _normalize_uploader_name(raw: str | None) -> str:
+    name = " ".join(str(raw or "").split())
+    return name[:40]
+
+
+def _store_image(
+    file_storage,
+    source: str,
+    priority: bool,
+    uploader_name: str = "",
+) -> dict:
     original = secure_filename(file_storage.filename or "upload.jpg")
     ext = Path(original).suffix.lower()
     if not ext or ext not in ALLOWED_EXTENSIONS:
@@ -173,6 +183,7 @@ def _store_image(file_storage, source: str, priority: bool) -> dict:
         "filename": filename,
         "original_name": original,
         "source": source,
+        "uploader_name": _normalize_uploader_name(uploader_name),
         "created_at": _utc_now(),
     }
 
@@ -196,6 +207,7 @@ def _public_image(img: dict) -> dict:
         "created_at": img["created_at"],
         "source": img.get("source", "user"),
         "original_name": img.get("original_name", ""),
+        "uploader_name": img.get("uploader_name", ""),
     }
 
 
@@ -272,11 +284,21 @@ def api_upload():
     f = request.files["image"]
     if not f or not f.filename:
         return jsonify({"ok": False, "error": "Empty file"}), 400
+    uploader_name = _normalize_uploader_name(
+        request.form.get("uploader_name") or request.form.get("name")
+    )
+    if not uploader_name:
+        return jsonify({"ok": False, "error": "Name is required"}), 400
     if not _allowed(f.filename) and Path(f.filename).suffix:
         # still try; extension check soft for camera blobs named blob
         pass
     try:
-        record = _store_image(f, source="user", priority=True)
+        record = _store_image(
+            f,
+            source="user",
+            priority=True,
+            uploader_name=uploader_name,
+        )
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     return jsonify({"ok": True, "image": _public_image(record)})

@@ -37,7 +37,7 @@
       card.innerHTML = `
         <img src="${img.url}" alt="" loading="lazy" />
         <button type="button" class="del" title="Delete" data-id="${img.id}">×</button>
-        <div class="meta">${img.source || "user"} · ${new Date(img.created_at).toLocaleString()}</div>
+        <div class="meta">${img.uploader_name ? img.uploader_name + " · " : ""}${img.source || "user"} · ${new Date(img.created_at).toLocaleString()}</div>
       `;
       grid.appendChild(card);
     }
