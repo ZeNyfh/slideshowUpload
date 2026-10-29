@@ -191,7 +191,7 @@
   uploaderName = readCachedName();
   if (uploaderName) {
     nameInput.value = uploaderName;
-    setNameStatus("Welcome back — name remembered for 24 hours.", "ok");
+    setNameStatus("Welcome back!", "ok");
   }
   applyNameGate();
 })();
