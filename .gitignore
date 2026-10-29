@@ -5,6 +5,7 @@ venv/
 uploads/*
 !uploads/.gitkeep
 data/state.json
+.env
 .idea/
 *.egg-info/
 dist/

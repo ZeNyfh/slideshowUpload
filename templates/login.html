@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0e1116" />
+  <title>Admin login</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body class="admin-page">
+  <main class="admin-wrap" style="max-width: 420px;">
+    <header>
+      <h1>Admin login</h1>
+      <p class="muted">Enter the password from your <code>.env</code> file.</p>
+    </header>
+    <section class="panel">
+      <form id="loginForm" class="row" style="flex-direction: column; align-items: stretch;">
+        <label class="field">
+          Password
+          <input type="password" id="password" name="password" autocomplete="current-password" required />
+        </label>
+        <button type="submit" class="btn btn-primary">Sign in</button>
+        <p class="status" id="status" aria-live="polite"></p>
+      </form>
+    </section>
+  </main>
+  <script src="/static/login.js"></script>
+</body>
+</html>

@@ -8,14 +8,24 @@
   const grid = document.getElementById("grid");
   const count = document.getElementById("count");
   const clearAll = document.getElementById("clearAll");
+  const logoutBtn = document.getElementById("logoutBtn");
 
   function setMsg(el, msg, kind) {
     el.textContent = msg || "";
     el.className = "status" + (kind ? ` ${kind}` : "");
   }
 
+  function ensureAuth(res) {
+    if (res.status === 401) {
+      window.location.href = "/admin/login";
+      return false;
+    }
+    return true;
+  }
+
   async function load() {
     const res = await fetch("/api/images", { cache: "no-store" });
+    if (!ensureAuth(res)) return;
     const data = await res.json();
     if (!data.ok) return;
     durationInput.value = data.slide_duration;
@@ -42,6 +52,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ slide_duration }),
       });
+      if (!ensureAuth(res)) return;
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || "Failed");
       setMsg(durationStatus, `Saved: ${data.slide_duration}s`, "ok");
@@ -57,6 +68,7 @@
     for (const f of files) body.append("images", f);
     try {
       const res = await fetch("/api/admin/upload", { method: "POST", body });
+      if (!ensureAuth(res)) return;
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || "Upload failed");
       const n = (data.images || []).length;
@@ -104,6 +116,7 @@
     if (!id) return;
     if (!confirm("Delete this photo?")) return;
     const res = await fetch(`/api/admin/images/${id}/delete`, { method: "POST" });
+    if (!ensureAuth(res)) return;
     const data = await res.json();
     if (res.ok && data.ok) await load();
   });
@@ -111,11 +124,17 @@
   clearAll.addEventListener("click", async () => {
     if (!confirm("Delete ALL photos?")) return;
     const res = await fetch("/api/admin/clear", { method: "POST" });
+    if (!ensureAuth(res)) return;
     const data = await res.json();
     if (res.ok && data.ok) {
       setMsg(uploadStatus, "All photos deleted.", "ok");
       await load();
     }
+  });
+
+  logoutBtn.addEventListener("click", async () => {
+    await fetch("/api/admin/logout", { method: "POST" });
+    window.location.href = "/admin/login";
   });
 
   load();

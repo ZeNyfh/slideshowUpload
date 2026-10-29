@@ -8,9 +8,11 @@ Phone-friendly image upload + fullscreen slideshow for events.
 |------|---------|
 | `/upload` | Guests: one image at a time (file or camera). New uploads jump the queue. |
 | `/view` | Display machine: fullscreen slideshow. |
-| `/admin` | Bulk upload, delete, set seconds-per-slide. |
+| `/admin` | Bulk upload, delete, set seconds-per-slide (password required). |
 
 Pages are intentionally isolated — no links between them. Point the QR code at `/upload`.
+
+Copy `.env.example` to `.env` and set `ADMIN_PASSWORD` (and preferably `SECRET_KEY`).
 
 ## Run
 

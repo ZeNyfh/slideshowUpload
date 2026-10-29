@@ -266,7 +266,9 @@ label.field {
   font-size: 0.9rem;
 }
 
-label.field input[type="number"] {
+label.field input[type="number"],
+label.field input[type="password"],
+label.field input[type="text"] {
   width: 120px;
   padding: 10px 12px;
   border-radius: 10px;
@@ -274,6 +276,11 @@ label.field input[type="number"] {
   background: #0c0f14;
   color: var(--ink);
   font-size: 1rem;
+}
+
+label.field input[type="password"],
+label.field input[type="text"] {
+  width: 100%;
 }
 
 .grid {

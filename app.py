@@ -3,23 +3,32 @@
 from __future__ import annotations
 
 import json
+import os
+import secrets
 import threading
 import uuid
 from datetime import datetime, timezone
+from functools import wraps
 from pathlib import Path
 
+from dotenv import load_dotenv
 from flask import (
     Flask,
     abort,
     jsonify,
+    redirect,
     render_template,
     request,
     send_from_directory,
+    session,
+    url_for,
 )
 from PIL import Image, ImageOps
 from werkzeug.utils import secure_filename
 
 BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(BASE_DIR / ".env")
+
 UPLOAD_DIR = BASE_DIR / "uploads"
 DATA_DIR = BASE_DIR / "data"
 STATE_PATH = DATA_DIR / "state.json"
@@ -30,8 +39,31 @@ DEFAULT_DURATION = 5
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 _lock = threading.RLock()
+
+
+def _admin_password() -> str:
+    return os.environ.get("ADMIN_PASSWORD", "").strip()
+
+
+def _is_admin() -> bool:
+    return bool(session.get("admin"))
+
+
+def require_admin(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not _is_admin():
+            if request.path.startswith("/api/"):
+                return jsonify({"ok": False, "error": "Unauthorized"}), 401
+            return redirect(url_for("admin_login_page"))
+        return view(*args, **kwargs)
+
+    return wrapped
 
 
 def _utc_now() -> str:
@@ -182,9 +214,43 @@ def view_page():
     return render_template("view.html")
 
 
+@app.get("/admin/login")
+def admin_login_page():
+    if _is_admin():
+        return redirect(url_for("admin_page"))
+    if not _admin_password():
+        return (
+            "ADMIN_PASSWORD is not set. Add it to .env and restart the server.",
+            503,
+        )
+    return render_template("login.html")
+
+
 @app.get("/admin")
+@require_admin
 def admin_page():
     return render_template("admin.html")
+
+
+@app.post("/api/admin/login")
+def api_admin_login():
+    expected = _admin_password()
+    if not expected:
+        return jsonify({"ok": False, "error": "ADMIN_PASSWORD not configured"}), 503
+    payload = request.get_json(silent=True) or {}
+    password = payload.get("password", request.form.get("password", ""))
+    if not isinstance(password, str) or not secrets.compare_digest(password, expected):
+        return jsonify({"ok": False, "error": "Wrong password"}), 401
+    session.clear()
+    session["admin"] = True
+    session.permanent = True
+    return jsonify({"ok": True})
+
+
+@app.post("/api/admin/logout")
+def api_admin_logout():
+    session.clear()
+    return jsonify({"ok": True})
 
 
 @app.get("/media/<path:filename>")
@@ -217,6 +283,7 @@ def api_upload():
 
 
 @app.post("/api/admin/upload")
+@require_admin
 def api_admin_upload():
     """Bulk upload from /admin (appended to rotation, no priority jump)."""
     files = request.files.getlist("images") or request.files.getlist("image")
@@ -240,6 +307,7 @@ def api_admin_upload():
 
 
 @app.get("/api/images")
+@require_admin
 def api_images():
     with _lock:
         state = _load_state()
@@ -318,6 +386,7 @@ def api_config():
 
 
 @app.post("/api/admin/config")
+@require_admin
 def api_admin_config():
     payload = request.get_json(silent=True) or {}
     duration = payload.get("slide_duration", request.form.get("slide_duration"))
@@ -337,6 +406,7 @@ def api_admin_config():
 
 @app.delete("/api/admin/images/<image_id>")
 @app.post("/api/admin/images/<image_id>/delete")
+@require_admin
 def api_admin_delete(image_id: str):
     with _lock:
         state = _load_state()
@@ -361,6 +431,7 @@ def api_admin_delete(image_id: str):
 
 
 @app.post("/api/admin/clear")
+@require_admin
 def api_admin_clear():
     with _lock:
         state = _load_state()
@@ -379,19 +450,19 @@ def create_app() -> Flask:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     if not STATE_PATH.exists():
         _save_state(_default_state())
+    if not _admin_password():
+        print("WARNING: ADMIN_PASSWORD is empty — set it in .env")
     return app
 
 
 if __name__ == "__main__":
-    import os
-
     create_app()
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "5050"))
     print(f"Slideshow server on http://{host}:{port}")
     print("  /upload  phone upload")
     print("  /view    slideshow display")
-    print("  /admin   manage images + duration")
+    print("  /admin   manage images + duration (password required)")
     try:
         from waitress import serve
 
