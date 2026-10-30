@@ -44,6 +44,8 @@ MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50 MB upload ceiling
 MAX_STORED_BYTES = 5 * 1024 * 1024  # 5 MB after compress
 MAX_IMAGE_EDGE = 2560  # initial max width/height for slideshow
 DEFAULT_DURATION = 5
+# Changes every process start so /view can detect a restart and refresh assets.
+BOOT_ID = secrets.token_hex(8)
 
 # Must match the keys of TRANSITIONS in static/view.js
 TRANSITIONS = [
@@ -194,6 +196,7 @@ def _display_config(state: dict) -> dict:
         "playback_order": state["playback_order"],
         "compat_mode": bool(state.get("compat_mode")),
         "qr": state["qr"],
+        "boot_id": BOOT_ID,
     }
 
 
@@ -575,7 +578,7 @@ def upload_page():
 
 @app.get("/view")
 def view_page():
-    return render_template("view.html")
+    return render_template("view.html", boot_id=BOOT_ID)
 
 
 @app.get("/admin/login")

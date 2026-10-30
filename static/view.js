@@ -1760,14 +1760,22 @@
     cleanupAfter(oldEl, newEl);
   }
 
-  async function showEmpty() {
+  // Page boot id from the HTML; API boot_id changes when the server restarts.
+  const pageBootId = document.body.dataset.bootId || "";
+
+  async function showEmpty(serverBootId) {
     empty.style.display = "grid";
     badge.classList.remove("show");
-    if (!currentEl) return;
-    const old = currentEl;
-    currentEl = null;
-    await play(old, [{ opacity: 1 }, { opacity: 0 }], { duration: 700 });
-    old.remove();
+    if (currentEl) {
+      const old = currentEl;
+      currentEl = null;
+      await play(old, [{ opacity: 1 }, { opacity: 0 }], { duration: 700 });
+      old.remove();
+    }
+    // Waiting screen + new boot id ⇒ pull latest HTML/CSS/JS for the live display.
+    if (serverBootId && pageBootId && serverBootId !== pageBootId) {
+      location.reload();
+    }
   }
 
   function flashBadge() {
@@ -1824,7 +1832,7 @@
       applyConfig(data);
       if (!data.ok || data.empty || !data.image) {
         discard();
-        await showEmpty();
+        await showEmpty(data.boot_id);
       } else {
         let slide = null;
         let prepared = null;

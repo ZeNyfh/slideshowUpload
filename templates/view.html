@@ -5,17 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#000000" />
   <title>Slideshow</title>
-  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/style.css?v={{ boot_id }}" />
 </head>
-<body class="view-page">
+<body class="view-page" data-boot-id="{{ boot_id }}">
   <div class="stage" id="stage">
     <p class="empty" id="empty">Waiting for images…</p>
     <div class="fx" id="fx"></div>
   </div>
   <div class="badge" id="badge">New</div>
   <div class="qr-float" id="qr" hidden></div>
-  <script src="/static/vendor/qrcode.js"></script>
-  <script src="/static/qr.js"></script>
-  <script src="/static/view.js"></script>
+  <script src="/static/vendor/qrcode.js?v={{ boot_id }}"></script>
+  <script src="/static/qr.js?v={{ boot_id }}"></script>
+  <script src="/static/view.js?v={{ boot_id }}"></script>
 </body>
 </html>
