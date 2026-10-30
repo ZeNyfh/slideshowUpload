@@ -716,51 +716,31 @@
         const newImg = newEl.querySelector("img");
         const clean = { clipPath: "inset(0% 0 0% 0)", transform: "none", filter: "none", opacity: 1 };
         const scan = fxEl("fx-scanlines");
+        // Compat: fewer slice cuts (less overwhelming) + real RGB flashes on the photo
         const jobs = [
           play(scan, [{ opacity: 0 }, { opacity: 1, offset: 0.1 }, { opacity: 1, offset: 0.85 }, { opacity: 0 }], {
             duration: 1500,
           }),
-          play(oldEl, [{ ...clean, easing: "steps(1, end)" }, ...glitchFrames(light ? 7 : 9), { ...clean, opacity: 0 }], {
+          play(oldEl, [{ ...clean, easing: "steps(1, end)" }, ...glitchFrames(light ? 4 : 9), { ...clean, opacity: 0 }], {
             duration: 700,
           }),
-          play(newEl, [{ opacity: 0, easing: "steps(1, end)" }, ...glitchFrames(light ? 8 : 11), clean], {
+          play(newEl, [{ opacity: 0, easing: "steps(1, end)" }, ...glitchFrames(light ? 5 : 11), clean], {
             duration: 1000,
             delay: 450,
           }),
         ];
-        if (light) {
-          // Cheap RGB look: colored overlays (no drop-shadow filters on the photo)
-          const red = fxEl("fx-rgb-band");
-          red.style.background = "rgba(255, 0, 70, 0.22)";
-          const cyan = fxEl("fx-rgb-band");
-          cyan.style.background = "rgba(0, 255, 230, 0.2)";
+        if (oldImg) {
           jobs.push(
-            play(
-              red,
-              [
-                { opacity: 0, transform: "translateX(0)" },
-                { opacity: 1, transform: "translateX(10px)", offset: 0.15, easing: "steps(1, end)" },
-                { opacity: 0.4, transform: "translateX(-6px)", offset: 0.35, easing: "steps(1, end)" },
-                { opacity: 1, transform: "translateX(8px)", offset: 0.55, easing: "steps(1, end)" },
-                { opacity: 0, transform: "translateX(0)" },
-              ],
-              { duration: 1500 }
-            ),
-            play(
-              cyan,
-              [
-                { opacity: 0, transform: "translateX(0)" },
-                { opacity: 1, transform: "translateX(-10px)", offset: 0.18, easing: "steps(1, end)" },
-                { opacity: 0.35, transform: "translateX(7px)", offset: 0.4, easing: "steps(1, end)" },
-                { opacity: 1, transform: "translateX(-8px)", offset: 0.58, easing: "steps(1, end)" },
-                { opacity: 0, transform: "translateX(0)" },
-              ],
-              { duration: 1500 }
-            )
+            play(oldImg, [...rgbSplitFrames(light ? 4 : 8), { filter: "none" }], { duration: 700 })
           );
-        } else {
-          if (oldImg) jobs.push(play(oldImg, [...rgbSplitFrames(8), { filter: "none" }], { duration: 700 }));
-          if (newImg) jobs.push(play(newImg, [...rgbSplitFrames(10), { filter: "none" }], { duration: 1000, delay: 450 }));
+        }
+        if (newImg) {
+          jobs.push(
+            play(newImg, [...rgbSplitFrames(light ? 5 : 10), { filter: "none" }], {
+              duration: 1000,
+              delay: 450,
+            })
+          );
         }
         return Promise.all(jobs);
       },
@@ -810,12 +790,12 @@
         const { w, h } = stageSize();
         const light = compat();
         const dusk = fxEl("fx-dusk");
-        // Compat keeps a dense swarm; skip only the costliest per-bat extras
-        const count = light ? (w < 700 ? 20 : 32) : w < 700 ? 26 : 46;
+        // Compat: fewer, bigger bats — reads as a swarm without DOM/filter overload
+        const count = light ? (w < 700 ? 12 : 16) : w < 700 ? 26 : 46;
         const flights = [];
         for (let i = 0; i < count; i++) {
           const bat = fxEl("fx-bat", BAT_SVG);
-          const size = rand(36, light ? 130 : 150);
+          const size = light ? rand(90, 200) : rand(36, 150);
           bat.style.width = `${size}px`;
           const sx = -size - rand(0, w * 0.3);
           const sy = rand(0.35, 1.1) * h;
@@ -823,10 +803,9 @@
           const ey = sy - rand(0.45, 1.05) * h;
           const mx = (sx + ex) / 2;
           const my = (sy + ey) / 2 + rand(-0.15, 0.15) * h;
-          // Wing flap on every bat; slower in compat so the compositor isn't flooded
           bat.firstElementChild.animate(
             [{ transform: "scaleY(1)" }, { transform: "scaleY(.25)" }, { transform: "scaleY(1)" }],
-            { duration: light ? rand(220, 340) : rand(130, 220), iterations: Infinity }
+            { duration: light ? rand(240, 380) : rand(130, 220), iterations: Infinity }
           );
           flights.push(
             play(
@@ -1025,19 +1004,35 @@
         const ring = fxEl("fx-portal");
         const newImg = newEl.querySelector("img");
         const opts = { duration: 1600, easing: "cubic-bezier(.7,0,.3,1)" };
-        // Compat: no clipPath, no photo scale/rotate, no ring spin — those drop frames hard
+        // Compat: dramatic scale + glowing ring, but no clipPath / spin (those dropped frames)
         if (compat()) {
-          const span = Math.min(r * 1.7, 1200);
+          const span = Math.min(r * 1.85, 1500);
           return Promise.all([
-            play(oldEl, [{ opacity: 1 }, { opacity: 0 }], { duration: 900, easing: "ease-in" }),
-            play(newEl, [{ opacity: 0 }, { opacity: 0, offset: 0.32 }, { opacity: 1 }], { duration: 1100 }),
+            play(
+              oldEl,
+              [
+                { opacity: 1, transform: "scale(1)" },
+                { opacity: 0, transform: "scale(0.72)" },
+              ],
+              { duration: 1100, easing: "ease-in" }
+            ),
+            play(
+              newEl,
+              [
+                { opacity: 0, transform: "scale(0.28)" },
+                { opacity: 0, offset: 0.3 },
+                { opacity: 1, transform: "none" },
+              ],
+              { duration: 1300, easing: "cubic-bezier(.7,0,.3,1)" }
+            ),
             play(
               ring,
               [
-                { width: "12px", height: "12px", opacity: 0.95, transform: "translate(-50%, -50%)" },
+                { width: "0px", height: "0px", opacity: 1, transform: "translate(-50%, -50%)" },
+                { width: `${span * 0.55}px`, height: `${span * 0.55}px`, opacity: 1, offset: 0.45, transform: "translate(-50%, -50%)" },
                 { width: `${span}px`, height: `${span}px`, opacity: 0, transform: "translate(-50%, -50%)" },
               ],
-              { duration: 1300, easing: "cubic-bezier(.7,0,.3,1)" }
+              { duration: 1400, easing: "cubic-bezier(.7,0,.3,1)" }
             ),
           ]);
         }

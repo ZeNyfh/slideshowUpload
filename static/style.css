@@ -827,16 +827,12 @@ body.compat-mode .fx-sigil {
 }
 
 body.compat-mode .fx-portal {
-  border-width: 4px;
-  box-shadow: 0 0 18px 3px rgba(140, 255, 60, 0.55);
-  background: transparent;
+  border-width: 5px;
+  box-shadow:
+    0 0 28px 8px rgba(140, 255, 60, 0.75),
+    0 0 70px 20px rgba(130, 40, 255, 0.5);
+  background: radial-gradient(circle, rgba(140, 255, 60, 0.18), rgba(150, 60, 255, 0.22) 55%, transparent 72%);
   will-change: width, height, opacity;
-}
-
-body.compat-mode .fx-rgb-band {
-  inset: 0;
-  opacity: 0;
-  pointer-events: none;
 }
 
 body.compat-mode .fx-nosignal {
