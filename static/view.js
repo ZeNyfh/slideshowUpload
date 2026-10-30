@@ -440,19 +440,17 @@
   }
 
   function glitchFrames(count) {
-    const light = compat();
     const frames = [];
     for (let i = 0; i < count; i++) {
       const top = rand(0, 75);
       const bottom = rand(0, 100 - top - 8);
-      const frame = {
+      frames.push({
         clipPath: `inset(${top}% 0 ${bottom}% 0)`,
         transform: `translate(${rand(-9, 9)}%, ${rand(-2, 2)}%) skewX(${rand(-12, 12)}deg)`,
+        filter: `hue-rotate(${rand(0, 360)}deg) saturate(4) contrast(1.7)`,
         opacity: 1,
         easing: "steps(1, end)",
-      };
-      if (!light) frame.filter = `hue-rotate(${rand(0, 360)}deg) saturate(4) contrast(1.7)`;
-      frames.push(frame);
+      });
     }
     return frames;
   }
@@ -711,37 +709,25 @@
     possessed: {
       ms: 1500,
       run: ({ oldEl, newEl }) => {
-        const light = compat();
+        // Same path with or without compat — full glitch runs fine on the slow display
         const oldImg = oldEl.querySelector("img");
         const newImg = newEl.querySelector("img");
         const clean = { clipPath: "inset(0% 0 0% 0)", transform: "none", filter: "none", opacity: 1 };
         const scan = fxEl("fx-scanlines");
-        // Compat: fewer slice cuts (less overwhelming) + real RGB flashes on the photo
         const jobs = [
           play(scan, [{ opacity: 0 }, { opacity: 1, offset: 0.1 }, { opacity: 1, offset: 0.85 }, { opacity: 0 }], {
             duration: 1500,
           }),
-          play(oldEl, [{ ...clean, easing: "steps(1, end)" }, ...glitchFrames(light ? 4 : 9), { ...clean, opacity: 0 }], {
+          play(oldEl, [{ ...clean, easing: "steps(1, end)" }, ...glitchFrames(9), { ...clean, opacity: 0 }], {
             duration: 700,
           }),
-          play(newEl, [{ opacity: 0, easing: "steps(1, end)" }, ...glitchFrames(light ? 5 : 11), clean], {
+          play(newEl, [{ opacity: 0, easing: "steps(1, end)" }, ...glitchFrames(11), clean], {
             duration: 1000,
             delay: 450,
           }),
         ];
-        if (oldImg) {
-          jobs.push(
-            play(oldImg, [...rgbSplitFrames(light ? 4 : 8), { filter: "none" }], { duration: 700 })
-          );
-        }
-        if (newImg) {
-          jobs.push(
-            play(newImg, [...rgbSplitFrames(light ? 5 : 10), { filter: "none" }], {
-              duration: 1000,
-              delay: 450,
-            })
-          );
-        }
+        if (oldImg) jobs.push(play(oldImg, [...rgbSplitFrames(8), { filter: "none" }], { duration: 700 }));
+        if (newImg) jobs.push(play(newImg, [...rgbSplitFrames(10), { filter: "none" }], { duration: 1000, delay: 450 }));
         return Promise.all(jobs);
       },
     },
