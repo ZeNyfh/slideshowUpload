@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0e1116" />
-  <title>Upload an image</title>
+  <title>Upload photos</title>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body class="upload-page">
@@ -29,14 +29,14 @@
     </section>
 
     <div id="uploadArea" class="upload-area is-locked" hidden>
-      <p class="intro">Send one photo to the slideshow. New uploads show up first.</p>
+      <p class="intro">Send as many photos as you like. New uploads show up first.</p>
       <p class="greeting" id="greeting">
         <span>Uploading as <strong id="greetingName"></strong></span>
         <button type="button" class="link-btn" id="changeNameBtn">Change</button>
       </p>
 
       <div class="preview" id="preview">
-        <img id="previewImg" alt="Selected preview" />
+        <div class="preview-grid" id="previewGrid"></div>
       </div>
 
       <div class="webcam" id="webcamPanel" hidden>
@@ -49,7 +49,7 @@
 
       <div class="actions" id="uploadActions">
         <button type="button" class="btn btn-primary" id="cameraBtn">Take a picture</button>
-        <button type="button" class="btn btn-secondary" id="fileBtn">Upload an image</button>
+        <button type="button" class="btn btn-secondary" id="fileBtn">Upload images</button>
         <button type="button" class="btn btn-primary" id="sendBtn" hidden>Send to slideshow</button>
       </div>
 
@@ -70,6 +70,7 @@
       id="fileInput"
       type="file"
       accept="image/*"
+      multiple
     />
   </main>
   <script src="/static/upload.js"></script>

@@ -6,7 +6,7 @@ Phone-friendly image upload + fullscreen slideshow for events.
 
 | Path | Purpose |
 |------|---------|
-| `/upload` | Guests: one image at a time (file or camera). New uploads jump the queue. |
+| `/upload` | Guests: any number of images at once (file or camera). New uploads jump the queue. |
 | `/view` | Display machine: fullscreen slideshow. |
 | `/admin` | Bulk upload, delete, set seconds-per-slide (password required). |
 
