@@ -31,13 +31,15 @@
     return { w, h, r: Math.hypot(w, h) / 2 + 40 };
   }
 
-  /** Cut a slide into clipped copies stacked above everything else. */
-  async function splitSlide(slide, cols, rows, hideSource = true) {
+  /** Clipped copies of a slide, appended hidden; splitSlide reveals them. */
+  async function makePieces(slide, cols, rows) {
     const pieces = [];
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
         const el = slide.cloneNode(true);
         el.classList.add("piece");
+        el.style.visibility = "hidden";
+        el.style.zIndex = slide.style.zIndex && slide.style.zIndex !== "0" ? slide.style.zIndex : "1";
         const top = Math.max(0, (row / rows) * 100 - 0.1);
         const bottom = Math.max(0, 100 - ((row + 1) / rows) * 100 - 0.1);
         const left = Math.max(0, (col / cols) * 100 - 0.1);
@@ -56,8 +58,28 @@
         return img ? img.decode().catch(() => {}) : null;
       })
     );
+    return { pieces, cols, rows };
+  }
+
+  /** Cut a slide into clipped copies stacked above everything else. */
+  async function splitSlide(slide, cols, rows, hideSource = true, ready = null) {
+    const set = ready && ready.cols === cols && ready.rows === rows ? ready : await makePieces(slide, cols, rows);
+    for (const p of set.pieces) p.el.style.visibility = "";
     if (hideSource) slide.style.visibility = "hidden";
-    return pieces;
+    return set.pieces;
+  }
+
+  let compatOn = false;
+  const compat = () => compatOn;
+
+  /** A prepare() result is only usable if the screen size / compat mode haven't changed since. */
+  function fresh(prepared) {
+    if (!prepared) return null;
+    const { w, h } = stageSize();
+    if (prepared.w !== w || prepared.h !== h) return null;
+    if (prepared.dpr && prepared.dpr !== canvasDpr()) return null;
+    if (prepared.compat != null && prepared.compat !== compat()) return null;
+    return prepared;
   }
 
   const smoothstep = (a, b, x) => {
@@ -65,18 +87,41 @@
     return t * t * (3 - 2 * t);
   };
   const easeInOut = (p) => (p < 0.5 ? 2 * p * p : 1 - (-2 * p + 2) ** 2 / 2);
-  const canvasDpr = () => Math.min(window.devicePixelRatio || 1, 2);
+  // Canvas effects lower their resolution on slow displays, tuned by how fast the last one ran.
+  // Remembered per browser so a slow projector starts at the right level after a reload.
+  const QUALITY_KEY = "slideshow.canvasQuality";
+  let canvasQuality = Math.min(1, Math.max(0.5, Number(localStorage.getItem(QUALITY_KEY)) || 1));
+  const canvasDpr = () => Math.min(window.devicePixelRatio || 1, 2) * canvasQuality;
+
+  function tuneCanvasQuality(avgFrameMs) {
+    const TARGET_MS = 30;
+    if (avgFrameMs > TARGET_MS * 1.3 || (avgFrameMs < TARGET_MS * 0.6 && canvasQuality < 1)) {
+      // Frame cost scales with pixel count, i.e. with quality squared
+      const scaled = canvasQuality * Math.sqrt(TARGET_MS / Math.max(1, avgFrameMs));
+      canvasQuality = Math.round(Math.min(1, Math.max(0.5, scaled)) * 100) / 100;
+      try {
+        localStorage.setItem(QUALITY_KEY, String(canvasQuality));
+      } catch (_) {
+        // Private mode / storage disabled: just don't remember
+      }
+    }
+  }
 
   /** Drive a canvas effect: draw(progress 0..1, elapsedMs) once per frame. */
   function animateFrames(duration, draw) {
     return new Promise((resolve) => {
       const start = performance.now();
+      let frames = 0;
       const step = (now) => {
         const elapsed = Math.max(0, now - start);
         const p = Math.min(1, elapsed / duration);
         draw(p, elapsed);
+        frames += 1;
         if (p < 1) requestAnimationFrame(step);
-        else resolve();
+        else {
+          tuneCanvasQuality(elapsed / frames);
+          resolve();
+        }
       };
       step(start);
     });
@@ -241,33 +286,173 @@
     return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">${lines}</svg>`;
   }
 
-  function startStatic(canvas) {
-    const ctx = canvas.getContext("2d");
-    const frame = ctx.createImageData(canvas.width, canvas.height);
-    const buf = new Uint32Array(frame.data.buffer);
-    (function draw() {
-      if (!canvas.isConnected) return;
+  /** Pre-bake a few noise frames so haunted-tv never regenerates static per paint. */
+  function makeStaticFrames(w, h, count = 5) {
+    const frames = [];
+    for (let f = 0; f < count; f++) {
+      const frame = new ImageData(w, h);
+      const buf = new Uint32Array(frame.data.buffer);
       for (let i = 0; i < buf.length; i++) {
         const v = (Math.random() * 255) | 0;
         buf[i] = 0xff000000 | (v << 16) | (v << 8) | v;
       }
-      ctx.putImageData(frame, 0, 0);
-      requestAnimationFrame(draw);
-    })();
+      frames.push(frame);
+    }
+    return frames;
+  }
+
+  /** Cycle pre-baked frames at ~12fps instead of filling ImageData every rAF. */
+  function startStatic(canvas, frames) {
+    const ctx = canvas.getContext("2d", { alpha: false });
+    let i = 0;
+    let last = 0;
+    const INTERVAL = 80;
+    const tick = (now) => {
+      if (!canvas.isConnected) return;
+      if (now - last >= INTERVAL) {
+        last = now;
+        ctx.putImageData(frames[i % frames.length], 0, 0);
+        i += 1;
+      }
+      requestAnimationFrame(tick);
+    };
+    ctx.putImageData(frames[0], 0, 0);
+    requestAnimationFrame(tick);
+  }
+
+  /** Build vine SVG + thorn markup off the critical path (no getPointAtLength). */
+  function buildVines(w, h) {
+    const light = compat();
+    // Compat keeps enough vines to read as a thicket; full density is for normal mode
+    const count = light ? (w < 700 ? 9 : 12) : w < 700 ? 11 : 18;
+    const vines = [];
+    let vineMarkup = "";
+    let thornMarkup = "";
+    for (let i = 0; i < count; i++) {
+      const side = i % 4;
+      const start = [
+        [rand(0, w), -20],
+        [w + 20, rand(0, h)],
+        [rand(0, w), h + 20],
+        [-20, rand(0, h)],
+      ][side];
+      const target = [w * rand(0.25, 0.75), h * rand(0.25, 0.75)];
+      const nx = -(target[1] - start[1]);
+      const ny = target[0] - start[0];
+      const len = Math.hypot(nx, ny) || 1;
+      const wobble = rand(40, 110);
+      const phase = rand(0, Math.PI * 2);
+      const pts = [];
+      for (let k = 0; k <= 6; k++) {
+        const t = k / 6;
+        const sway = Math.sin(t * 4 + phase) * wobble * (1 - t * 0.4);
+        pts.push([
+          start[0] + (target[0] - start[0]) * t + (nx / len) * sway,
+          start[1] + (target[1] - start[1]) * t + (ny / len) * sway,
+        ]);
+      }
+      const [ex, ey] = pts[pts.length - 1];
+      const curl = rand(0, Math.PI * 2);
+      for (let k = 1; k <= 4; k++) {
+        const a = curl + k * 1.4;
+        const rad = 42 - k * 9;
+        pts.push([ex + Math.cos(a) * rad, ey + Math.sin(a) * rad]);
+      }
+      const width = rand(9, 24);
+      const delay = rand(0, 350);
+      vines.push({ delay });
+      vineMarkup += `<path class="vine" d="${smoothPath(pts)}" stroke-width="${width.toFixed(1)}" pathLength="1"/>`;
+
+      const seglen = [];
+      let total = 0;
+      for (let s = 1; s < pts.length; s++) {
+        const L = Math.hypot(pts[s][0] - pts[s - 1][0], pts[s][1] - pts[s - 1][1]);
+        seglen.push(L);
+        total += L;
+      }
+      let flip = 1;
+      const thornStep = light ? () => rand(40, 70) : () => rand(30, 55);
+      for (let d = light ? 36 : 30; d < total - 20; d += thornStep()) {
+        let acc = 0;
+        for (let s = 0; s < seglen.length; s++) {
+          if (acc + seglen[s] < d) {
+            acc += seglen[s];
+            continue;
+          }
+          const t = (d - acc) / seglen[s];
+          const x = pts[s][0] + (pts[s + 1][0] - pts[s][0]) * t;
+          const y = pts[s][1] + (pts[s + 1][1] - pts[s][1]) * t;
+          const angle = (Math.atan2(pts[s + 1][1] - pts[s][1], pts[s + 1][0] - pts[s][0]) * 180) / Math.PI;
+          const sz = width * 0.55;
+          const appear = delay + 1100 * (d / total);
+          thornMarkup += `<path d="M${(-sz).toFixed(1)} 0L${(sz * 0.4).toFixed(1)} 0L${(sz * 1.3).toFixed(1)} ${(flip * (width / 2 + sz * 1.3)).toFixed(1)}Z" transform="translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${angle.toFixed(1)})" data-appear="${appear.toFixed(0)}"/>`;
+          flip = -flip;
+          break;
+        }
+      }
+    }
+    return {
+      w,
+      h,
+      compat: light,
+      vines,
+      html: `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">${vineMarkup}<g class="thorns">${thornMarkup}</g></svg>`,
+    };
+  }
+
+  function buildSummoning(w, h) {
+    const light = compat();
+    const S = Math.min(w, h) * 0.85;
+    const c = S / 2;
+    const R1 = S * 0.47;
+    const R2 = S * 0.4;
+    const RR = S * 0.435;
+    const star = [0, 1, 2, 3, 4]
+      .map((k) => {
+        const a = ((-90 + k * 144) * Math.PI) / 180;
+        return `${(c + R2 * Math.cos(a)).toFixed(1)} ${(c + R2 * Math.sin(a)).toFixed(1)}`;
+      })
+      .join(" L");
+    const fontSize = light ? S * 0.042 : S * 0.034;
+    let count = Math.floor((2 * Math.PI * RR) / (fontSize * (light ? 1.4 : 1.15)));
+    if (light) count = Math.min(18, Math.max(10, count));
+    let runes = "";
+    for (let i = 0; i < count; i++) runes += RUNES[i % RUNES.length];
+    const id = `rune-${Math.random().toString(36).slice(2, 9)}`;
+    return {
+      w,
+      h,
+      compat: light,
+      r: Math.hypot(w, h) / 2 + 40,
+      S,
+      html: `<svg viewBox="0 0 ${S} ${S}" aria-hidden="true">
+        <defs><path id="${id}" d="M${c} ${c - RR}a${RR} ${RR} 0 1 1 0 ${2 * RR}a${RR} ${RR} 0 1 1 0 ${-2 * RR}"/></defs>
+        <circle class="draw" cx="${c}" cy="${c}" r="${R1}" pathLength="1"/>
+        <circle class="draw" cx="${c}" cy="${c}" r="${R2}" pathLength="1"/>
+        <path class="draw" d="M${star} Z" pathLength="1"/>
+        <text class="runes" font-size="${fontSize}"><textPath href="#${id}">${runes}</textPath></text>
+      </svg>`,
+    };
+  }
+
+  function meltCols(w) {
+    return Math.max(16, Math.round(w / 45));
   }
 
   function glitchFrames(count) {
+    const light = compat();
     const frames = [];
     for (let i = 0; i < count; i++) {
       const top = rand(0, 75);
       const bottom = rand(0, 100 - top - 8);
-      frames.push({
+      const frame = {
         clipPath: `inset(${top}% 0 ${bottom}% 0)`,
         transform: `translate(${rand(-9, 9)}%, ${rand(-2, 2)}%) skewX(${rand(-12, 12)}deg)`,
-        filter: `hue-rotate(${rand(0, 360)}deg) saturate(4) contrast(1.7)`,
         opacity: 1,
         easing: "steps(1, end)",
-      });
+      };
+      if (!light) frame.filter = `hue-rotate(${rand(0, 360)}deg) saturate(4) contrast(1.7)`;
+      frames.push(frame);
     }
     return frames;
   }
@@ -396,8 +581,10 @@
       ms: 2600,
       run: ({ oldEl, newEl }) => {
         const duration = 2600;
+        const light = compat();
         const veil = fxEl("fx-veil");
-        const banks = [0, 1, 2, 3].map((i) => {
+        const bankCount = light ? 1 : 4;
+        const banks = Array.from({ length: bankCount }, (_, i) => {
           const bank = fxEl("fx-fog");
           bank.style.top = `${rand(-25, 45)}%`;
           const dir = i % 2 ? 1 : -1;
@@ -412,6 +599,21 @@
             { duration, delay: i * 90, easing: "ease-in-out" }
           );
         });
+        // Full-slide blur is the expensive part on weak GPUs — opacity only in compat
+        if (light) {
+          return Promise.all([
+            ...banks,
+            play(veil, [{ opacity: 0 }, { opacity: 0.75, offset: 0.45 }, { opacity: 0 }], {
+              duration,
+              easing: "ease-in-out",
+            }),
+            play(oldEl, [{ opacity: 1 }, { opacity: 0, offset: 0.55 }, { opacity: 0 }], { duration }),
+            play(newEl, [{ opacity: 0 }, { opacity: 0, offset: 0.4 }, { opacity: 1 }], {
+              duration,
+              easing: "ease-out",
+            }),
+          ]);
+        }
         return Promise.all([
           ...banks,
           play(veil, [{ opacity: 0 }, { opacity: 0.65, offset: 0.45 }, { opacity: 0 }], {
@@ -438,43 +640,56 @@
       ms: 2200,
       run: ({ oldEl, newEl }) => {
         const duration = 2200;
+        const light = compat();
         const chill = fxEl("fx-chill");
-        const trails = [-1, 1].map((dir) => {
-          const trail = oldEl.cloneNode(true);
-          trail.classList.add("piece", "ghost-trail");
-          stage.appendChild(trail);
-          return play(
-            trail,
-            [
-              { opacity: 0, transform: "none", filter: "grayscale(1) blur(2px)" },
-              { opacity: 0.5, offset: 0.25 },
-              {
-                opacity: 0,
-                transform: `translate(${dir * 8}%, -18%) scale(1.2)`,
-                filter: "grayscale(1) brightness(1.8) blur(10px)",
-                offset: 0.65,
-              },
+        // Full-slide clones + blur + mix-blend are the expensive part; skip in compat
+        const trails = light
+          ? []
+          : [-1, 1].map((dir) => {
+              const trail = oldEl.cloneNode(true);
+              trail.classList.add("piece", "ghost-trail");
+              stage.appendChild(trail);
+              return play(
+                trail,
+                [
+                  { opacity: 0, transform: "none", filter: "grayscale(1) blur(2px)" },
+                  { opacity: 0.5, offset: 0.25 },
+                  {
+                    opacity: 0,
+                    transform: `translate(${dir * 8}%, -18%) scale(1.2)`,
+                    filter: "grayscale(1) brightness(1.8) blur(10px)",
+                    offset: 0.65,
+                  },
+                  { opacity: 0 },
+                ],
+                { duration, easing: "ease-out" }
+              );
+            });
+        const oldOut = light
+          ? [
+              { opacity: 1, transform: "none", filter: "none" },
+              { opacity: 0.75, offset: 0.3, filter: "grayscale(.8) brightness(1.3)" },
+              { opacity: 0, transform: "translateY(-12%) scale(1.15)", filter: "grayscale(1) brightness(1.7)", offset: 0.7 },
               { opacity: 0 },
-            ],
-            { duration, easing: "ease-out" }
-          );
-        });
-        return Promise.all([
-          ...trails,
-          play(chill, [{ opacity: 0 }, { opacity: 0.85, offset: 0.4 }, { opacity: 0 }], { duration }),
-          play(
-            oldEl,
-            [
+            ]
+          : [
               { opacity: 1, transform: "none", filter: "none" },
               { opacity: 0.75, offset: 0.3, filter: "grayscale(.8) brightness(1.3)" },
               { opacity: 0, transform: "translateY(-12%) scale(1.15)", filter: "grayscale(1) brightness(1.7) blur(9px)", offset: 0.7 },
               { opacity: 0 },
-            ],
-            { duration, easing: "ease-in" }
-          ),
-          play(
-            newEl,
-            [
+            ];
+        const newIn = light
+          ? [
+              { opacity: 0, transform: "scale(.94) translateY(4%)", filter: "grayscale(1) brightness(1.5)" },
+              { opacity: 0, offset: 0.35 },
+              { opacity: 0.4, offset: 0.45 },
+              { opacity: 0.1, offset: 0.5 },
+              { opacity: 0.65, offset: 0.6 },
+              { opacity: 0.3, offset: 0.66 },
+              { opacity: 1, offset: 0.82, filter: "grayscale(.3) brightness(1.1)" },
+              { opacity: 1, transform: "none", filter: "none" },
+            ]
+          : [
               { opacity: 0, transform: "scale(.94) translateY(4%)", filter: "grayscale(1) brightness(1.9) blur(12px)" },
               { opacity: 0, offset: 0.35 },
               { opacity: 0.4, offset: 0.45 },
@@ -483,9 +698,12 @@
               { opacity: 0.3, offset: 0.66 },
               { opacity: 1, offset: 0.82, filter: "grayscale(.3) brightness(1.1) blur(1px)" },
               { opacity: 1, transform: "none", filter: "none" },
-            ],
-            { duration, easing: "ease-out" }
-          ),
+            ];
+        return Promise.all([
+          ...trails,
+          play(chill, [{ opacity: 0 }, { opacity: 0.85, offset: 0.4 }, { opacity: 0 }], { duration }),
+          play(oldEl, oldOut, { duration, easing: "ease-in" }),
+          play(newEl, newIn, { duration, easing: "ease-out" }),
         ]);
       },
     },
@@ -493,24 +711,29 @@
     possessed: {
       ms: 1500,
       run: ({ oldEl, newEl }) => {
-        const scan = fxEl("fx-scanlines");
+        const light = compat();
         const oldImg = oldEl.querySelector("img");
         const newImg = newEl.querySelector("img");
         const clean = { clipPath: "inset(0% 0 0% 0)", transform: "none", filter: "none", opacity: 1 };
         const jobs = [
-          play(scan, [{ opacity: 0 }, { opacity: 1, offset: 0.1 }, { opacity: 1, offset: 0.85 }, { opacity: 0 }], {
-            duration: 1500,
-          }),
-          play(oldEl, [{ ...clean, easing: "steps(1, end)" }, ...glitchFrames(9), { ...clean, opacity: 0 }], {
+          play(oldEl, [{ ...clean, easing: "steps(1, end)" }, ...glitchFrames(light ? 3 : 9), { ...clean, opacity: 0 }], {
             duration: 700,
           }),
-          play(newEl, [{ opacity: 0, easing: "steps(1, end)" }, ...glitchFrames(11), clean], {
+          play(newEl, [{ opacity: 0, easing: "steps(1, end)" }, ...glitchFrames(light ? 4 : 11), clean], {
             duration: 1000,
             delay: 450,
           }),
         ];
-        if (oldImg) jobs.push(play(oldImg, [...rgbSplitFrames(8), { filter: "none" }], { duration: 700 }));
-        if (newImg) jobs.push(play(newImg, [...rgbSplitFrames(10), { filter: "none" }], { duration: 1000, delay: 450 }));
+        if (!light) {
+          const scan = fxEl("fx-scanlines");
+          jobs.push(
+            play(scan, [{ opacity: 0 }, { opacity: 1, offset: 0.1 }, { opacity: 1, offset: 0.85 }, { opacity: 0 }], {
+              duration: 1500,
+            })
+          );
+          if (oldImg) jobs.push(play(oldImg, [...rgbSplitFrames(8), { filter: "none" }], { duration: 700 }));
+          if (newImg) jobs.push(play(newImg, [...rgbSplitFrames(10), { filter: "none" }], { duration: 1000, delay: 450 }));
+        }
         return Promise.all(jobs);
       },
     },
@@ -520,7 +743,7 @@
       run: async ({ newEl }) => {
         const { w } = stageSize();
         const curtain = fxEl("fx-blood");
-        const count = Math.max(14, Math.round(w / 55));
+        const count = compat() ? Math.max(7, Math.round(w / 110)) : Math.max(14, Math.round(w / 55));
         let longest = 0;
         for (let i = 0; i < count; i++) {
           const drip = document.createElement("div");
@@ -557,12 +780,13 @@
       ms: 2800,
       run: ({ oldEl, newEl }) => {
         const { w, h } = stageSize();
+        const light = compat();
         const dusk = fxEl("fx-dusk");
-        const count = w < 700 ? 26 : 46;
+        const count = light ? (w < 700 ? 10 : 16) : w < 700 ? 26 : 46;
         const flights = [];
         for (let i = 0; i < count; i++) {
           const bat = fxEl("fx-bat", BAT_SVG);
-          const size = rand(36, 150);
+          const size = rand(36, light ? 110 : 150);
           bat.style.width = `${size}px`;
           const sx = -size - rand(0, w * 0.3);
           const sy = rand(0.35, 1.1) * h;
@@ -570,10 +794,12 @@
           const ey = sy - rand(0.45, 1.05) * h;
           const mx = (sx + ex) / 2;
           const my = (sy + ey) / 2 + rand(-0.15, 0.15) * h;
-          bat.firstElementChild.animate(
-            [{ transform: "scaleY(1)" }, { transform: "scaleY(.25)" }, { transform: "scaleY(1)" }],
-            { duration: rand(130, 220), iterations: Infinity }
-          );
+          if (!light) {
+            bat.firstElementChild.animate(
+              [{ transform: "scaleY(1)" }, { transform: "scaleY(.25)" }, { transform: "scaleY(1)" }],
+              { duration: rand(130, 220), iterations: Infinity }
+            );
+          }
           flights.push(
             play(
               bat,
@@ -599,12 +825,19 @@
 
     shatter: {
       ms: 2100,
-      run: async ({ oldEl, newEl }) => {
+      prepare: async ({ oldEl }) => {
+        const cols = compat() ? 5 : 7;
+        const rows = compat() ? 3 : 5;
+        return { ...stageSize(), compat: compat(), cols, rows, set: await makePieces(oldEl, cols, rows) };
+      },
+      run: async ({ oldEl, newEl, prepared }) => {
         const { w, h } = stageSize();
         sendUnder(newEl);
         const ix = rand(0.3, 0.7);
         const iy = rand(0.3, 0.7);
-        const pieces = await splitSlide(oldEl, 7, 5);
+        const cols = fresh(prepared)?.cols || (compat() ? 5 : 7);
+        const rows = fresh(prepared)?.rows || (compat() ? 3 : 5);
+        const pieces = await splitSlide(oldEl, cols, rows, true, fresh(prepared)?.set);
         const cracks = fxEl("fx-cracks", cracksSvg(w, h, ix, iy));
         const flash = fxEl("fx-flash");
         const jobs = [
@@ -636,10 +869,33 @@
 
     melt: {
       ms: 2400,
-      run: async ({ oldEl, newEl }) => {
-        const { w } = stageSize();
+      prepare: async ({ oldEl }) => {
+        if (compat()) return { ...stageSize(), compat: true };
+        const size = stageSize();
+        const cols = meltCols(size.w);
+        return { ...size, compat: false, cols, set: await makePieces(oldEl, cols, 1) };
+      },
+      run: async ({ oldEl, newEl, prepared }) => {
         sendUnder(newEl);
-        const strips = await splitSlide(oldEl, Math.max(16, Math.round(w / 45)), 1);
+        // Compat: one element drip — cloning ~16 full slides is what stalls weak CPUs
+        if (compat()) {
+          oldEl.style.transformOrigin = "50% 0";
+          return Promise.all([
+            play(
+              oldEl,
+              [
+                { transform: "none", opacity: 1 },
+                { transform: "translateY(10%) scaleY(1.08)", opacity: 0.85, offset: 0.35 },
+                { transform: "translateY(118%) scaleY(1.55)", opacity: 0 },
+              ],
+              { duration: 1600, easing: "cubic-bezier(.5,0,.85,.4)" }
+            ),
+            play(newEl, [{ opacity: 0 }, { opacity: 1 }], { duration: 1400, delay: 350 }),
+          ]);
+        }
+        const { w } = stageSize();
+        const cols = fresh(prepared)?.cols || meltCols(w);
+        const strips = await splitSlide(oldEl, cols, 1, true, fresh(prepared)?.set);
         const phase = rand(0, Math.PI * 2);
         const jobs = [play(newEl, [{ filter: "brightness(.2)" }, { filter: "none" }], { duration: 1800, delay: 400 })];
         for (const s of strips) {
@@ -666,26 +922,50 @@
 
     "haunted-tv": {
       ms: 1900,
-      run: ({ oldEl, newEl }) => {
+      prepare: () => {
+        const size = stageSize();
+        const cw = compat() ? 96 : 160;
+        const ch = compat() ? 54 : 90;
+        return { ...size, compat: compat(), cw, ch, frames: makeStaticFrames(cw, ch, 5) };
+      },
+      run: ({ oldEl, newEl, prepared }) => {
+        const light = compat();
+        const ready = fresh(prepared) || TRANSITIONS["haunted-tv"].prepare();
         const canvas = document.createElement("canvas");
-        canvas.width = 160;
-        canvas.height = 90;
+        canvas.width = ready.cw;
+        canvas.height = ready.ch;
         canvas.className = "fx-static";
         fx.appendChild(canvas);
-        startStatic(canvas);
+        startStatic(canvas, ready.frames);
         const label = fxEl("fx-nosignal");
         label.textContent = "NO SIGNAL";
         const scan = fxEl("fx-scanlines");
-        return Promise.all([
-          play(
-            oldEl,
-            [
+        const oldFrames = light
+          ? [
+              { transform: "scale(1, 1)", opacity: 1 },
+              { transform: "scale(1, .006)", opacity: 1, offset: 0.65 },
+              { transform: "scale(0, .006)", opacity: 0.4 },
+            ]
+          : [
               { transform: "scale(1, 1)", filter: "brightness(1)" },
               { transform: "scale(1, .006)", filter: "brightness(4)", offset: 0.65 },
               { transform: "scale(0, .006)", filter: "brightness(8)" },
-            ],
-            { duration: 600, easing: "ease-in" }
-          ),
+            ];
+        const newFrames = light
+          ? [
+              { transform: "scale(0, .006)", opacity: 0.5 },
+              { transform: "scale(1, .006)", opacity: 1, offset: 0.35 },
+              { transform: "scale(1, 1.04)", opacity: 1, offset: 0.75 },
+              { transform: "scale(1, 1)", opacity: 1 },
+            ]
+          : [
+              { transform: "scale(0, .006)", filter: "brightness(8)" },
+              { transform: "scale(1, .006)", filter: "brightness(4)", offset: 0.35 },
+              { transform: "scale(1, 1.04)", filter: "brightness(1.4) contrast(1.3)", offset: 0.75 },
+              { transform: "scale(1, 1)", filter: "none" },
+            ];
+        return Promise.all([
+          play(oldEl, oldFrames, { duration: 600, easing: "ease-in" }),
           play(canvas, [{ opacity: 0 }, { opacity: 0, offset: 0.3 }, { opacity: 0.85, offset: 0.36 }, { opacity: 0.7, offset: 0.6 }, { opacity: 0, offset: 0.68 }, { opacity: 0 }], {
             duration: 1900,
           }),
@@ -705,16 +985,7 @@
           play(scan, [{ opacity: 0 }, { opacity: 1, offset: 0.3 }, { opacity: 1, offset: 0.85 }, { opacity: 0 }], {
             duration: 1900,
           }),
-          play(
-            newEl,
-            [
-              { transform: "scale(0, .006)", filter: "brightness(8)" },
-              { transform: "scale(1, .006)", filter: "brightness(4)", offset: 0.35 },
-              { transform: "scale(1, 1.04)", filter: "brightness(1.4) contrast(1.3)", offset: 0.75 },
-              { transform: "scale(1, 1)", filter: "none" },
-            ],
-            { duration: 700, delay: 1200, easing: "ease-out" }
-          ),
+          play(newEl, newFrames, { duration: 700, delay: 1200, easing: "ease-out" }),
         ]);
       },
     },
@@ -726,6 +997,22 @@
         const ring = fxEl("fx-portal");
         const newImg = newEl.querySelector("img");
         const opts = { duration: 1600, easing: "cubic-bezier(.7,0,.3,1)" };
+        // clipPath circle on full-bleed photos is costly; compat uses scale/opacity instead
+        if (compat()) {
+          return Promise.all([
+            play(newEl, [{ opacity: 0, transform: "scale(0.15)" }, { opacity: 1, transform: "none" }], opts),
+            play(
+              ring,
+              [
+                { width: "0px", height: "0px", opacity: 1, transform: "translate(-50%, -50%) rotate(0deg)" },
+                { opacity: 1, offset: 0.85 },
+                { width: `${r * 2}px`, height: `${r * 2}px`, opacity: 0, transform: "translate(-50%, -50%) rotate(270deg)" },
+              ],
+              opts
+            ),
+            play(oldEl, [{ opacity: 1, transform: "none" }, { opacity: 0, transform: "rotate(20deg) scale(.65)" }], opts),
+          ]);
+        }
         const jobs = [
           play(newEl, [{ clipPath: "circle(0px at 50% 50%)" }, { clipPath: `circle(${r}px at 50% 50%)` }], opts),
           play(
@@ -826,16 +1113,58 @@
 
     ashes: {
       ms: 2800,
-      run: async ({ oldEl, newEl }) => {
+      prepare: ({ oldEl }) => {
         const { w, h } = stageSize();
-        // dpr 1 keeps clearRect on whole pixels, so no seams between particles
+        if (compat()) {
+          const src = renderSlide(oldEl, w, h, 1);
+          return { src, w, h, compat: true };
+        }
         const src = renderSlide(oldEl, w, h, 1);
+        const pixels = src.getContext("2d").getImageData(0, 0, src.width, src.height).data;
+        return { src, pixels, w, h, compat: false };
+      },
+      run: async ({ oldEl, newEl, prepared }) => {
+        const { w, h } = stageSize();
+        const ready = fresh(prepared) || TRANSITIONS.ashes.prepare({ oldEl });
+        const { src } = ready;
         const { ctx } = fxCanvas(w, h, 1);
         ctx.drawImage(src, 0, 0);
         oldEl.style.visibility = "hidden";
 
+        // Compat: wind wipe + a handful of motes — full particle grids stall the main thread
+        if (compat() || !ready.pixels) {
+          const motes = [];
+          for (let i = 0; i < 48; i++) {
+            motes.push({
+              x: rand(0, w),
+              y: rand(0, h),
+              vx: rand(80, 260),
+              vy: rand(-200, -40),
+              s: rand(4, 14),
+              ember: pick(EMBERS),
+            });
+          }
+          play(newEl, [{ opacity: 0 }, { opacity: 1 }], { duration: 1500, delay: 250 });
+          await animateFrames(1800, (p) => {
+            const wipe = p * (w + 80);
+            ctx.globalAlpha = 1;
+            ctx.clearRect(0, 0, w, h);
+            ctx.drawImage(src, 0, 0);
+            ctx.clearRect(0, 0, wipe, h);
+            ctx.globalAlpha = Math.max(0, 1 - p * 1.15);
+            ctx.fillStyle = "#ffab40";
+            for (const m of motes) {
+              if (m.x > wipe + 40) continue;
+              const sec = p * 1.8;
+              ctx.fillStyle = m.ember;
+              ctx.fillRect(m.x + m.vx * sec * 0.35, m.y + m.vy * sec * 0.35, m.s * (1 - p * 0.7), m.s * (1 - p * 0.7));
+            }
+          });
+          return;
+        }
+
+        const { pixels } = ready;
         const size = Math.max(5, Math.round(Math.sqrt((w * h) / 8000)));
-        const pixels = src.getContext("2d").getImageData(0, 0, src.width, src.height).data;
         const life = 1150;
         const parts = [];
         let lastStart = 0;
@@ -881,15 +1210,11 @@
 
     burn: {
       ms: 2500,
-      run: async ({ oldEl }) => {
+      prepare: ({ oldEl }) => {
         const { w, h } = stageSize();
         const dpr = canvasDpr();
         const src = renderSlide(oldEl, w, h, dpr);
-        const { canvas, ctx } = fxCanvas(w, h, dpr);
-        ctx.drawImage(src, 0, 0);
-        oldEl.style.visibility = "hidden";
-
-        const cols = 120;
+        const cols = compat() ? 64 : 120;
         const rows = Math.max(2, Math.round((cols * h) / w));
         const n1 = valueNoise(cols, rows, 14);
         const n2 = valueNoise(cols, rows, 5);
@@ -908,15 +1233,25 @@
           }
         }
         for (let i = 0; i < field.length; i++) field[i] = (field[i] - lo) / (hi - lo);
+        return { src, field, cols, rows, w, h, dpr, compat: compat() };
+      },
+      run: async ({ oldEl, prepared }) => {
+        const { src, field, cols, rows, w, h, dpr } = fresh(prepared) || TRANSITIONS.burn.prepare({ oldEl });
+        const { canvas, ctx } = fxCanvas(w, h, dpr);
+        ctx.drawImage(src, 0, 0);
+        oldEl.style.visibility = "hidden";
 
         const mask = document.createElement("canvas");
         mask.width = cols;
         mask.height = rows;
         const mctx = mask.getContext("2d");
         const mimg = mctx.createImageData(cols, rows);
+        // The glow is low-res anyway, so let the compositor stretch it instead of redrawing it full-size
         const edge = document.createElement("canvas");
+        edge.className = "fx-canvas";
         edge.width = cols;
         edge.height = rows;
+        fx.appendChild(edge);
         const ectx = edge.getContext("2d");
         const eimg = ectx.createImageData(cols, rows);
 
@@ -947,25 +1282,25 @@
           }
           mctx.putImageData(mimg, 0, 0);
           ectx.putImageData(eimg, 0, 0);
-          ctx.globalCompositeOperation = "source-over";
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(src, 0, 0);
+          // Burnt areas never come back, so cutting the previous frame again is enough
           ctx.imageSmoothingEnabled = true;
           ctx.globalCompositeOperation = "destination-in";
           ctx.drawImage(mask, 0, 0, canvas.width, canvas.height);
-          ctx.globalCompositeOperation = "source-over";
-          ctx.drawImage(edge, 0, 0, canvas.width, canvas.height);
         });
       },
     },
 
     ripple: {
       ms: 2100,
-      run: async ({ oldEl, newEl }) => {
+      prepare: ({ oldEl, newEl }) => {
         const { w, h } = stageSize();
         const dpr = canvasDpr();
         const a = renderSlide(oldEl, w, h, dpr);
         const b = renderSlide(newEl, w, h, dpr);
+        return { a, b, w, h, dpr };
+      },
+      run: async ({ oldEl, newEl, prepared }) => {
+        const { a, b, w, h, dpr } = fresh(prepared) || TRANSITIONS.ripple.prepare({ oldEl, newEl });
         const { canvas, ctx } = fxCanvas(w, h, dpr);
         const tint = fxEl("fx-reflection");
         oldEl.style.visibility = "hidden";
@@ -996,10 +1331,11 @@
 
     "crypt-doors": {
       ms: 2400,
-      run: async ({ oldEl, newEl }) => {
+      prepare: async ({ oldEl }) => ({ ...stageSize(), set: await makePieces(oldEl, 2, 1) }),
+      run: async ({ oldEl, newEl, prepared }) => {
         sendUnder(newEl);
         stage.style.perspective = "1600px";
-        const [left, right] = await splitSlide(oldEl, 2, 1);
+        const [left, right] = await splitSlide(oldEl, 2, 1, true, fresh(prepared)?.set);
         const faces = [];
         for (const [piece, side] of [[left, "left"], [right, "right"]]) {
           piece.el.style.transformOrigin = side === "left" ? "0% 50%" : "100% 50%";
@@ -1032,11 +1368,17 @@
 
     spellbook: {
       ms: 2000,
-      run: async ({ oldEl, newEl }) => {
+      prepare: async ({ oldEl, newEl }) => ({
+        ...stageSize(),
+        oldSet: await makePieces(oldEl, 2, 1),
+        newSet: await makePieces(newEl, 2, 1),
+      }),
+      run: async ({ oldEl, newEl, prepared }) => {
         sendUnder(newEl);
         stage.style.perspective = "2200px";
-        const [, oldRight] = await splitSlide(oldEl, 2, 1);
-        const [newLeft, newRight] = await splitSlide(newEl, 2, 1, false);
+        const ready = fresh(prepared);
+        const [, oldRight] = await splitSlide(oldEl, 2, 1, true, ready?.oldSet);
+        const [newLeft, newRight] = await splitSlide(newEl, 2, 1, false, ready?.newSet);
         newRight.el.remove();
         for (const piece of [oldRight, newLeft]) {
           piece.el.style.transformOrigin = "50% 50%";
@@ -1069,43 +1411,24 @@
 
     summoning: {
       ms: 2500,
-      run: ({ oldEl, newEl }) => {
-        const { w, h, r } = stageSize();
-        const S = Math.min(w, h) * 0.85;
-        const c = S / 2;
-        const R1 = S * 0.47;
-        const R2 = S * 0.4;
-        const RR = S * 0.435;
-        const star = [0, 1, 2, 3, 4]
-          .map((k) => {
-            const a = ((-90 + k * 144) * Math.PI) / 180;
-            return `${(c + R2 * Math.cos(a)).toFixed(1)} ${(c + R2 * Math.sin(a)).toFixed(1)}`;
-          })
-          .join(" L");
-        const fontSize = S * 0.034;
-        const count = Math.floor((2 * Math.PI * RR) / (fontSize * 1.15));
-        let runes = "";
-        for (let i = 0; i < count; i++) runes += RUNES[i % RUNES.length];
-        const id = `rune-${Date.now()}`;
-        const sigil = fxEl(
-          "fx-sigil",
-          `<svg viewBox="0 0 ${S} ${S}" aria-hidden="true">
-            <defs><path id="${id}" d="M${c} ${c - RR}a${RR} ${RR} 0 1 1 0 ${2 * RR}a${RR} ${RR} 0 1 1 0 ${-2 * RR}"/></defs>
-            <circle class="draw" cx="${c}" cy="${c}" r="${R1}" pathLength="1"/>
-            <circle class="draw" cx="${c}" cy="${c}" r="${R2}" pathLength="1"/>
-            <path class="draw" d="M${star} Z" pathLength="1"/>
-            <text class="runes" font-size="${fontSize}"><textPath href="#${id}">${runes}</textPath></text>
-          </svg>`
-        );
-        sigil.style.width = `${S}px`;
-        sigil.style.height = `${S}px`;
+      prepare: () => {
+        const { w, h } = stageSize();
+        return buildSummoning(w, h);
+      },
+      run: ({ oldEl, newEl, prepared }) => {
+        const { w, h } = stageSize();
+        const built = fresh(prepared) || buildSummoning(w, h);
+        const light = compat();
+        const sigil = fxEl("fx-sigil", built.html);
+        sigil.style.width = `${built.S}px`;
+        sigil.style.height = `${built.S}px`;
         const [ring1, ring2, pent] = sigil.querySelectorAll(".draw");
         const runeText = sigil.querySelector(".runes");
         const flash = fxEl("fx-flash fx-flash-red");
         const draw = (el, delay, duration) =>
           play(el, [{ strokeDashoffset: "1" }, { strokeDashoffset: "0" }], { duration, delay, easing: "ease-in-out" });
         const center = "translate(-50%, -50%)";
-        return Promise.all([
+        const jobs = [
           draw(ring1, 0, 800),
           draw(ring2, 150, 800),
           draw(pent, 450, 850),
@@ -1121,15 +1444,31 @@
             { duration: 2500 }
           ),
           play(flash, [{ opacity: 0 }, { opacity: 0.8, offset: 0.3 }, { opacity: 0 }], { duration: 450, delay: 1300 }),
-          play(oldEl, [{ filter: "none" }, { filter: "brightness(.35) sepia(.8) hue-rotate(-30deg) saturate(2)" }], {
-            duration: 1300,
-          }),
-          play(newEl, [{ clipPath: "circle(0px at 50% 50%)" }, { clipPath: `circle(${r}px at 50% 50%)` }], {
-            duration: 900,
-            delay: 1400,
-            easing: "cubic-bezier(.7,0,.3,1)",
-          }),
-        ]);
+        ];
+        if (light) {
+          const veil = fxEl("fx-dusk");
+          veil.style.background = "radial-gradient(ellipse at 50% 50%, rgba(120,0,20,.55), rgba(20,0,0,.75))";
+          jobs.push(
+            play(veil, [{ opacity: 0 }, { opacity: 1, offset: 0.55 }, { opacity: 0 }], { duration: 1400 }),
+            play(newEl, [{ opacity: 0, transform: "scale(0.2)" }, { opacity: 1, transform: "none" }], {
+              duration: 900,
+              delay: 1400,
+              easing: "cubic-bezier(.7,0,.3,1)",
+            })
+          );
+        } else {
+          jobs.push(
+            play(oldEl, [{ filter: "none" }, { filter: "brightness(.35) sepia(.8) hue-rotate(-30deg) saturate(2)" }], {
+              duration: 1300,
+            }),
+            play(newEl, [{ clipPath: "circle(0px at 50% 50%)" }, { clipPath: `circle(${built.r}px at 50% 50%)` }], {
+              duration: 900,
+              delay: 1400,
+              easing: "cubic-bezier(.7,0,.3,1)",
+            })
+          );
+        }
+        return Promise.all(jobs);
       },
     },
 
@@ -1150,72 +1489,43 @@
             [0.72, -30],
             [1, -100],
           ].map(([offset, y]) => ({ offset, transform: `translateY(${dir * y}%)` }));
-        return Promise.all([
-          play(top, lid(1), { duration, easing: "ease-in-out" }),
-          play(bottom, lid(-1), { duration, easing: "ease-in-out" }),
-          play(
-            newEl,
-            [
+        const reveal = compat()
+          ? [
+              { opacity: 0, transform: "scale(1.14)" },
+              { opacity: 0, offset: 0.47 },
+              { opacity: 1, offset: 0.48, transform: "scale(1.14)" },
+              { opacity: 1, transform: "none" },
+            ]
+          : [
               { opacity: 0, transform: "scale(1.14)", filter: "blur(8px) saturate(1.4)" },
               { opacity: 0, offset: 0.47 },
               { opacity: 1, offset: 0.48, transform: "scale(1.14)", filter: "blur(8px) saturate(1.4)" },
               { opacity: 1, transform: "none", filter: "none" },
-            ],
-            { duration, easing: "ease-out" }
-          ),
+            ];
+        return Promise.all([
+          play(top, lid(1), { duration, easing: "ease-in-out" }),
+          play(bottom, lid(-1), { duration, easing: "ease-in-out" }),
+          play(newEl, reveal, { duration, easing: "ease-out" }),
         ]);
       },
     },
 
     vines: {
       ms: 2800,
-      run: ({ newEl }) => {
+      prepare: () => {
         const { w, h } = stageSize();
-        const count = w < 700 ? 11 : 18;
-        const vines = [];
-        let markup = "";
-        for (let i = 0; i < count; i++) {
-          const side = i % 4;
-          const start = [
-            [rand(0, w), -20],
-            [w + 20, rand(0, h)],
-            [rand(0, w), h + 20],
-            [-20, rand(0, h)],
-          ][side];
-          const target = [w * rand(0.25, 0.75), h * rand(0.25, 0.75)];
-          const nx = -(target[1] - start[1]);
-          const ny = target[0] - start[0];
-          const len = Math.hypot(nx, ny) || 1;
-          const wobble = rand(40, 110);
-          const phase = rand(0, Math.PI * 2);
-          const pts = [];
-          for (let k = 0; k <= 6; k++) {
-            const t = k / 6;
-            const sway = Math.sin(t * 4 + phase) * wobble * (1 - t * 0.4);
-            pts.push([
-              start[0] + (target[0] - start[0]) * t + (nx / len) * sway,
-              start[1] + (target[1] - start[1]) * t + (ny / len) * sway,
-            ]);
-          }
-          const [ex, ey] = pts[pts.length - 1];
-          const curl = rand(0, Math.PI * 2);
-          for (let k = 1; k <= 4; k++) {
-            const a = curl + k * 1.4;
-            const rad = 42 - k * 9;
-            pts.push([ex + Math.cos(a) * rad, ey + Math.sin(a) * rad]);
-          }
-          const width = rand(9, 24);
-          vines.push({ width, delay: rand(0, 350) });
-          markup += `<path class="vine" d="${smoothPath(pts)}" stroke-width="${width.toFixed(1)}" pathLength="1"/>`;
-        }
-        const layer = fxEl("fx-vines", `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">${markup}<g class="thorns"></g></svg>`);
+        return buildVines(w, h);
+      },
+      run: ({ newEl, prepared }) => {
+        const { w, h } = stageSize();
+        const built = fresh(prepared) || buildVines(w, h);
+        const layer = fxEl("fx-vines", built.html);
         const thicket = fxEl("fx-thicket");
         fx.insertBefore(thicket, layer);
-        const thornGroup = layer.querySelector(".thorns");
         const grow = 1100;
         const jobs = [];
         layer.querySelectorAll(".vine").forEach((path, i) => {
-          const { width, delay } = vines[i];
+          const delay = built.vines[i].delay;
           jobs.push(
             play(
               path,
@@ -1228,28 +1538,23 @@
               { duration: 2600, easing: "ease-in-out" }
             )
           );
-          const total = path.getTotalLength();
-          let flip = 1;
-          for (let d = 30; d < total - 20; d += rand(30, 55)) {
-            const p = path.getPointAtLength(d);
-            const q = path.getPointAtLength(d + 1);
-            const angle = (Math.atan2(q.y - p.y, q.x - p.x) * 180) / Math.PI;
-            const s = width * 0.55;
-            const thorn = document.createElementNS("http://www.w3.org/2000/svg", "path");
-            thorn.setAttribute(
-              "d",
-              `M${-s} 0L${s * 0.4} 0L${s * 1.3} ${flip * (width / 2 + s * 1.3)}Z`
-            );
-            thorn.setAttribute("transform", `translate(${p.x.toFixed(1)} ${p.y.toFixed(1)}) rotate(${angle.toFixed(1)})`);
-            thornGroup.appendChild(thorn);
-            const appear = delay + grow * (d / total);
-            jobs.push(
-              play(thorn, [{ opacity: 0 }, { opacity: 0, offset: appear / 2600 }, { opacity: 1, offset: Math.min(0.6, appear / 2600 + 0.03) }, { opacity: 1, offset: 0.62 }, { opacity: 0, offset: 0.8 }, { opacity: 0 }], {
-                duration: 2600,
-              })
-            );
-            flip = -flip;
-          }
+        });
+        layer.querySelectorAll(".thorns path").forEach((thorn) => {
+          const appear = Number(thorn.dataset.appear) || 0;
+          jobs.push(
+            play(
+              thorn,
+              [
+                { opacity: 0 },
+                { opacity: 0, offset: appear / 2600 },
+                { opacity: 1, offset: Math.min(0.6, appear / 2600 + 0.03) },
+                { opacity: 1, offset: 0.62 },
+                { opacity: 0, offset: 0.8 },
+                { opacity: 0 },
+              ],
+              { duration: 2600 }
+            )
+          );
         });
         jobs.push(
           play(thicket, [{ opacity: 0 }, { opacity: 0.96, offset: 0.42 }, { opacity: 0.96, offset: 0.55 }, { opacity: 0 }], {
@@ -1336,6 +1641,11 @@
     }
     if (Array.isArray(data.transitions)) config.transitions = data.transitions;
     if (data.transition_mode) config.mode = data.transition_mode;
+    if (typeof data.compat_mode === "boolean") {
+      compatOn = data.compat_mode;
+      document.body.classList.toggle("compat-mode", compatOn);
+      if (compatOn) canvasQuality = Math.min(canvasQuality, 0.65);
+    }
     if (data.qr) updateQr(data.qr);
   }
 
@@ -1416,8 +1726,8 @@
     stage.style.perspective = "";
   }
 
-  async function transitionTo(newEl) {
-    const name = chooseTransition();
+  async function transitionTo(newEl, preName, prepared) {
+    const name = preName || chooseTransition();
     lastName = name;
     const tx = TRANSITIONS[name];
 
@@ -1429,11 +1739,12 @@
     }
     oldEl.style.zIndex = "1";
     newEl.style.zIndex = "2";
-    stage.appendChild(newEl);
+    // A prepared slide is already laid out under the current one; moving it would repaint it
+    if (newEl.parentNode !== stage) stage.appendChild(newEl);
     currentEl = newEl;
 
     try {
-      await Promise.race([tx.run({ oldEl, newEl }), wait(tx.ms + 2500)]);
+      await Promise.race([tx.run({ oldEl, newEl, prepared }), wait(tx.ms + 2500)]);
     } catch (_) {
       // A broken effect should never stall the slideshow
     }
@@ -1455,39 +1766,91 @@
     setTimeout(() => badge.classList.remove("show"), 1800);
   }
 
+  /* While a slide is on screen, get the next one fully ready: the server reserves
+     the next photo, it is downloaded, decoded and laid out underneath the current
+     slide, the transition is chosen, and that transition's prepare() does its
+     heavy canvas/DOM work. The transition itself then starts with nothing to do. */
+  let pending = null; // Promise of the prepared next slide (or null)
+
+  async function prepareNext() {
+    const res = await fetch("/api/slideshow/peek", { cache: "no-store" });
+    const peek = await res.json();
+    if (!peek.ok || !peek.image) return null;
+    const slide = await buildSlide(peek.image);
+    const name = chooseTransition();
+    let prepared = null;
+    if (currentEl && currentEl.isConnected) {
+      // Opaque current slide hides it; being in the page lets the browser lay out and paint it now
+      slide.style.zIndex = "0";
+      stage.insertBefore(slide, currentEl);
+      const tx = TRANSITIONS[name];
+      if (tx.prepare) {
+        try {
+          prepared = await tx.prepare({ oldEl: currentEl, newEl: slide });
+        } catch (_) {
+          prepared = null;
+        }
+      }
+    }
+    return { imageId: peek.image.id, slide, name, prepared };
+  }
+
   async function tick() {
     if (busy) return;
     busy = true;
     let next = 2000;
+    // On a slow display preparation may still be running; finishing it beats starting over
+    const ready = pending ? await pending : null;
+    pending = null;
+    let unused = ready;
+    const discard = () => {
+      if (!unused) return;
+      unused.slide.remove();
+      stage.querySelectorAll(".piece").forEach((el) => el.remove());
+      unused = null;
+    };
     try {
       const res = await fetch("/api/slideshow/next", { cache: "no-store" });
       const data = await res.json();
       applyConfig(data);
       if (!data.ok || data.empty || !data.image) {
+        discard();
         await showEmpty();
       } else {
         let slide = null;
-        try {
-          slide = await buildSlide(data.image);
-        } catch (_) {
-          slide = null;
+        let prepared = null;
+        if (ready && ready.imageId === data.image.id) {
+          slide = ready.slide;
+          prepared = ready.prepared;
+          unused = null;
+        }
+        if (!slide) {
+          try {
+            slide = await buildSlide(data.image);
+          } catch (_) {
+            slide = null;
+          }
         }
         if (slide) {
+          discard();
           empty.style.display = "none";
           if (data.from_priority) flashBadge();
-          await transitionTo(slide);
+          await transitionTo(slide, ready && ready.name, prepared);
           next = config.duration * 1000;
         } else {
           next = 1000;
         }
       }
     } catch (_) {
+      discard();
       await showEmpty();
       next = 2500;
     } finally {
+      discard();
       busy = false;
     }
     schedule(next);
+    pending = prepareNext().catch(() => null);
   }
 
   function schedule(ms) {

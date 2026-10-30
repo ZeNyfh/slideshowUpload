@@ -35,7 +35,11 @@
         <button type="button" class="btn btn-primary" id="saveDuration">Save</button>
         <span class="status" id="durationStatus"></span>
       </div>
-      <p class="muted" style="margin-top: 10px;">New guest uploads always play next, whatever the order.</p>
+      <label class="check-field" style="margin-top: 14px;">
+        <input type="checkbox" id="compatMode" />
+        Compatibility mode (smoother on slow displays / projectors)
+      </label>
+      <p class="muted" style="margin-top: 10px;">New guest uploads always play next, whatever the order. Compatibility mode keeps the same transitions but uses fewer particles, lighter filters, and cheaper overlays.</p>
     </section>
 
     <section class="panel">

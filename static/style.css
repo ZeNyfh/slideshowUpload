@@ -53,6 +53,7 @@ body.upload-page {
 
 .upload-shell {
   width: min(420px, 100%);
+  height: 100%;
   max-height: 100%;
   min-height: 0;
   display: flex;
@@ -63,6 +64,10 @@ body.upload-page {
 body.is-compact .name-bar,
 body.is-compact .intro {
   display: none;
+}
+
+body.is-compact .upload-shell h1 {
+  flex: 0 0 auto;
 }
 
 .greeting {
@@ -132,6 +137,12 @@ body.is-compact .greeting {
 
 .upload-shell h1 {
   margin: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
   font-size: clamp(1.8rem, 7vw, 2.35rem);
   letter-spacing: -0.03em;
   line-height: 1.1;
@@ -768,6 +779,62 @@ body.view-page {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+/* Compatibility mode: same transitions, cheaper paints (admin toggle) */
+body.compat-mode .fx-flash,
+body.compat-mode .fx-chill,
+body.compat-mode .fx-cryptlight,
+body.compat-mode .fx-tarot-glow,
+body.compat-mode .fx-reflection,
+body.compat-mode .stage .slide.ghost-trail {
+  mix-blend-mode: normal;
+}
+
+body.compat-mode .fx-scanlines {
+  mix-blend-mode: normal;
+  opacity: 0.85;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.35) 0 3px,
+    rgba(255, 255, 255, 0.04) 3px 6px
+  );
+}
+
+body.compat-mode .fx-fog {
+  /* Soft radial blobs already look foggy; live blur() is what stalls weak GPUs */
+  filter: none;
+}
+
+body.compat-mode .fx-vines {
+  filter: drop-shadow(0 0 2px #000) drop-shadow(0 0 8px rgba(90, 255, 110, 0.28));
+}
+
+body.compat-mode .fx-bat,
+body.compat-mode .fx-bolt,
+body.compat-mode .fx-cracks,
+body.compat-mode .fx-spider .spider,
+body.compat-mode .fx-smoke {
+  filter: none;
+}
+
+body.compat-mode .fx-sigil {
+  filter: drop-shadow(0 0 10px rgba(160, 0, 0, 0.8));
+}
+
+body.compat-mode .fx-portal {
+  box-shadow:
+    0 0 16px 4px rgba(140, 255, 60, 0.55),
+    0 0 40px 12px rgba(130, 40, 255, 0.35);
+  background: radial-gradient(circle, rgba(140, 255, 60, 0.2), rgba(150, 60, 255, 0.25) 55%, transparent 70%);
+}
+
+body.compat-mode .fx-nosignal {
+  text-shadow: 3px 0 0 rgba(255, 0, 70, 0.75), -3px 0 0 rgba(0, 255, 230, 0.75);
+}
+
+body.compat-mode .fx-blood .drip {
+  box-shadow: none;
 }
 
 .stage .empty {

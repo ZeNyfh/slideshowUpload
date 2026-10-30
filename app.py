@@ -167,6 +167,7 @@ def _default_state() -> dict:
         "transitions_known": list(TRANSITION_NAMES),
         "transition_mode": "random",
         "playback_order": "sequence",
+        "compat_mode": False,
         "qr": dict(QR_DEFAULTS),
         "images": [],
         "priority_queue": [],
@@ -174,6 +175,7 @@ def _default_state() -> dict:
         "cursor": 0,
         "deck": [],
         "recent": [],
+        "upcoming": None,
     }
 
 
@@ -190,6 +192,7 @@ def _display_config(state: dict) -> dict:
         "transitions": state["transitions"],
         "transition_mode": state["transition_mode"],
         "playback_order": state["playback_order"],
+        "compat_mode": bool(state.get("compat_mode")),
         "qr": state["qr"],
     }
 
@@ -303,6 +306,7 @@ def _load_state() -> dict:
     base["qr"] = _load_qr(data.get("qr"))
     if base["transition_mode"] not in TRANSITION_MODES:
         base["transition_mode"] = "random"
+    base["compat_mode"] = bool(base.get("compat_mode"))
     return base
 
 
@@ -333,6 +337,8 @@ def _prune_missing(state: dict) -> None:
     state["rotation"] = [i for i in state["rotation"] if i in keep]
     state["deck"] = [i for i in state["deck"] if i in keep]
     state["recent"] = [i for i in state["recent"] if i in keep]
+    if state["upcoming"] not in keep:
+        state["upcoming"] = None
     if state["rotation"]:
         state["cursor"] %= len(state["rotation"])
     else:
@@ -387,6 +393,21 @@ def _pick_regular(state: dict) -> str | None:
     if order == "smart":
         return _pick_smart(state, newest_first)
     return _pick_sequence(state)
+
+
+def _reserve_upcoming(state: dict) -> str | None:
+    """Pick the next rotation photo now and hold it, so peek and next always agree."""
+    if not state["upcoming"]:
+        state["upcoming"] = _pick_regular(state)
+    return state["upcoming"]
+
+
+def _peek_next(state: dict) -> str | None:
+    """What /api/slideshow/next will return; guest uploads stay in the queue until then."""
+    for candidate in state["priority_queue"]:
+        if _image_by_id(state, candidate):
+            return candidate
+    return _reserve_upcoming(state)
 
 
 def _allowed(filename: str) -> bool:
@@ -700,7 +721,8 @@ def api_slideshow_next():
                     state["rotation"].append(candidate)
 
         if image_id is None:
-            image_id = _pick_regular(state)
+            image_id = _reserve_upcoming(state)
+            state["upcoming"] = None
 
         if image_id:
             state["recent"] = (state["recent"] + [image_id])[-RECENT_HISTORY:]
@@ -723,6 +745,28 @@ def api_slideshow_next():
                 "image": _public_image(img) if img else None,
                 **_display_config(state),
                 "from_priority": from_priority,
+                "empty": img is None,
+            }
+        )
+
+
+@app.get("/api/slideshow/peek")
+def api_slideshow_peek():
+    """The image /api/slideshow/next will serve, so the display can prepare it early.
+
+    A new guest upload arriving in between still wins; the reserved pick then waits.
+    """
+    with _lock:
+        state = _load_state()
+        _prune_missing(state)
+        image_id = _peek_next(state)
+        _save_state(state)
+        img = _image_by_id(state, image_id) if image_id else None
+        return jsonify(
+            {
+                "ok": True,
+                "image": _public_image(img) if img else None,
+                **_display_config(state),
                 "empty": img is None,
             }
         )
@@ -781,6 +825,10 @@ def api_admin_config():
             return jsonify({"ok": False, "error": "Invalid photo order"}), 400
         updates["playback_order"] = order
         updates["deck"] = []
+        updates["upcoming"] = None
+
+    if "compat_mode" in payload:
+        updates["compat_mode"] = bool(payload["compat_mode"])
 
     if "qr" in payload:
         with _lock:
