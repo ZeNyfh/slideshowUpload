@@ -117,10 +117,14 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 
 @app.before_request
-def _lift_admin_upload_limits():
-    # Must run before the body is parsed; guests keep MAX_CONTENT_LENGTH.
-    # Flask treats None as "use app config", so use sys.maxsize for "no limit".
-    if request.path == "/api/admin/upload" and _is_admin():
+def _lift_upload_limits():
+    # Must run before the body is parsed. Guest and admin uploads accept any
+    # number of files, so neither the total body size nor the form-part count
+    # may cap the batch. Flask treats None as "use app config", so use
+    # sys.maxsize for "no limit".
+    if request.path == "/api/upload" or (
+        request.path == "/api/admin/upload" and _is_admin()
+    ):
         request.max_content_length = sys.maxsize
         request.max_form_parts = sys.maxsize
 
@@ -649,30 +653,44 @@ def media(filename: str):
 
 @app.post("/api/upload")
 def api_upload():
-    """Single-image upload from /upload (priority queue)."""
-    if "image" not in request.files:
-        return jsonify({"ok": False, "error": "No image provided"}), 400
-    f = request.files["image"]
-    if not f or not f.filename:
-        return jsonify({"ok": False, "error": "Empty file"}), 400
+    """Upload any number of images from /upload (priority queue).
+
+    Accepts ``images`` (preferred) or repeated ``image`` fields for backwards
+    compatibility with older clients that send a single file.
+    """
+    files = [f for f in request.files.getlist("images") if f and f.filename]
+    if not files:
+        files = [f for f in request.files.getlist("image") if f and f.filename]
+    if not files:
+        return jsonify({"ok": False, "error": "No images provided"}), 400
     uploader_name = _normalize_uploader_name(
         request.form.get("uploader_name") or request.form.get("name")
     )
     if not uploader_name:
         return jsonify({"ok": False, "error": "Name is required"}), 400
-    if not _allowed(f.filename) and Path(f.filename).suffix:
-        # still try; extension check soft for camera blobs named blob
-        pass
-    try:
-        record = _store_image(
-            f,
-            source="user",
-            priority=True,
-            uploader_name=uploader_name,
-        )
-    except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
-    return jsonify({"ok": True, "image": _public_image(record)})
+
+    saved = []
+    errors = []
+    for f in files:
+        try:
+            record = _store_image(
+                f,
+                source="user",
+                priority=True,
+                uploader_name=uploader_name,
+            )
+            saved.append(_public_image(record))
+        except Exception as exc:
+            errors.append({"name": f.filename, "error": str(exc)})
+
+    if not saved:
+        return jsonify({"ok": False, "error": "No images could be uploaded", "errors": errors}), 400
+
+    payload = {"ok": True, "images": saved, "errors": errors}
+    if len(saved) == 1:
+        # Keep the old single-image response shape for existing clients.
+        payload["image"] = saved[0]
+    return jsonify(payload)
 
 
 @app.post("/api/admin/upload")

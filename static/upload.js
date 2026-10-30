@@ -16,14 +16,14 @@
   const cameraInput = document.getElementById("cameraInput");
   const fileInput = document.getElementById("fileInput");
   const preview = document.getElementById("preview");
-  const previewImg = document.getElementById("previewImg");
+  const previewGrid = document.getElementById("previewGrid");
   const status = document.getElementById("status");
   const webcamPanel = document.getElementById("webcamPanel");
   const webcamVideo = document.getElementById("webcamVideo");
   const webcamCaptureBtn = document.getElementById("webcamCaptureBtn");
   const webcamCancelBtn = document.getElementById("webcamCancelBtn");
 
-  let selectedFile = null;
+  let selectedFiles = []; // { file, url } for each photo queued to send
   let busy = false;
   let uploaderName = "";
   let webcamStream = null;
@@ -99,7 +99,7 @@
     webcamVideo.srcObject = null;
     webcamPanel.hidden = true;
     uploadActions.hidden = false;
-    if (selectedFile) {
+    if (selectedFiles.length) {
       preview.classList.add("visible");
       sendBtn.hidden = false;
     }
@@ -133,8 +133,8 @@
         err && (err.name === "NotAllowedError" || err.name === "PermissionDeniedError");
       setStatus(
         denied
-          ? "Camera permission denied. Allow access or use Upload an image."
-          : "Could not open webcam. Use Upload an image instead.",
+          ? "Camera permission denied. Allow access or use Upload images."
+          : "Could not open webcam. Use Upload images instead.",
         "err"
       );
     }
@@ -164,7 +164,7 @@
           return;
         }
         const file = new File([blob], "webcam.jpg", { type: "image/jpeg" });
-        onPicked(file);
+        onFilesPicked([file]);
       },
       "image/jpeg",
       0.92
@@ -173,12 +173,14 @@
 
   /** Once a photo is picked/sent, drop the name card + intro so everything fits on screen. */
   function updateLayout() {
-    const hasPhoto = Boolean(selectedFile);
+    const count = selectedFiles.length;
+    const hasPhoto = count > 0;
     const compact = Boolean(uploaderName) && !editingName && (hasPhoto || hasSent || Boolean(webcamStream));
     document.body.classList.toggle("is-compact", compact);
     uploadActions.classList.toggle("has-photo", hasPhoto);
-    cameraBtn.textContent = hasPhoto ? "Retake" : "Take a picture";
-    fileBtn.textContent = hasPhoto ? "Choose another" : "Upload an image";
+    cameraBtn.textContent = hasPhoto ? "Take another" : "Take a picture";
+    fileBtn.textContent = hasPhoto ? "Choose more" : "Upload images";
+    sendBtn.textContent = count > 1 ? `Send ${count} photos to slideshow` : "Send to slideshow";
   }
 
   function applyNameGate() {
@@ -216,37 +218,98 @@
     applyNameGate();
   }
 
+  function revokeSelection() {
+    selectedFiles.forEach((item) => URL.revokeObjectURL(item.url));
+    selectedFiles = [];
+  }
+
   function resetSelection() {
-    selectedFile = null;
-    preview.classList.remove("visible");
-    previewImg.removeAttribute("src");
+    revokeSelection();
+    previewGrid.replaceChildren();
+    preview.classList.remove("visible", "single", "multiple");
+    preview.style.removeProperty("--photo-ratio");
     sendBtn.hidden = true;
     cameraInput.value = "";
     fileInput.value = "";
     updateLayout();
   }
 
-  function onPicked(file) {
+  function readyMessage() {
+    const count = selectedFiles.length;
+    return count > 1 ? `Ready to send ${count} photos.` : "Ready to send.";
+  }
+
+  function renderPreview() {
+    previewGrid.replaceChildren();
+    preview.classList.toggle("single", selectedFiles.length === 1);
+    preview.classList.toggle("multiple", selectedFiles.length > 1);
+
+    selectedFiles.forEach((item, index) => {
+      const tile = document.createElement("div");
+      tile.className = "preview-tile";
+
+      const img = document.createElement("img");
+      img.src = item.url;
+      img.alt = `Selected photo ${index + 1}`;
+      img.loading = "lazy";
+      if (index === 0) {
+        img.addEventListener("load", () => {
+          if (selectedFiles.length === 1 && selectedFiles[0].url === item.url) {
+            if (img.naturalWidth && img.naturalHeight) {
+              preview.style.setProperty(
+                "--photo-ratio",
+                `${img.naturalWidth} / ${img.naturalHeight}`
+              );
+            }
+          }
+        });
+      }
+
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "preview-remove";
+      removeBtn.setAttribute("aria-label", `Remove photo ${index + 1}`);
+      removeBtn.textContent = "×";
+      removeBtn.addEventListener("click", () => removeFile(index));
+
+      tile.append(img, removeBtn);
+      previewGrid.append(tile);
+    });
+  }
+
+  function removeFile(index) {
+    const [removed] = selectedFiles.splice(index, 1);
+    if (removed) URL.revokeObjectURL(removed.url);
+    if (!selectedFiles.length) {
+      resetSelection();
+      setStatus("", "");
+      return;
+    }
+    renderPreview();
+    setStatus(readyMessage(), "");
+    updateLayout();
+  }
+
+  function onFilesPicked(files) {
     if (!uploaderName) {
       setStatus("Save your name first.", "err");
       return;
     }
-    if (!file || !file.type.startsWith("image/")) {
+    const picked = Array.from(files || []).filter(
+      (file) => file && file.type && file.type.startsWith("image/")
+    );
+    if (!picked.length) {
       setStatus("Please choose an image.", "err");
       return;
     }
-    selectedFile = file;
-    const url = URL.createObjectURL(file);
-    previewImg.onload = () => {
-      URL.revokeObjectURL(url);
-      if (previewImg.naturalWidth && previewImg.naturalHeight) {
-        preview.style.setProperty("--photo-ratio", `${previewImg.naturalWidth} / ${previewImg.naturalHeight}`);
-      }
-    };
-    previewImg.src = url;
+
+    selectedFiles.push(
+      ...picked.map((file) => ({ file, url: URL.createObjectURL(file) }))
+    );
+    renderPreview();
     preview.classList.add("visible");
     sendBtn.hidden = false;
-    setStatus("Ready to send.", "");
+    setStatus(readyMessage(), "");
     updateLayout();
   }
 
@@ -283,21 +346,23 @@
   webcamCaptureBtn.addEventListener("click", captureWebcam);
   webcamCancelBtn.addEventListener("click", () => {
     stopWebcam();
-    setStatus("", "");
+    setStatus(selectedFiles.length ? readyMessage() : "", "");
   });
 
   cameraInput.addEventListener("change", () => {
-    const file = cameraInput.files && cameraInput.files[0];
-    onPicked(file);
+    const files = cameraInput.files ? Array.from(cameraInput.files) : [];
+    cameraInput.value = "";
+    if (files.length) onFilesPicked(files);
   });
 
   fileInput.addEventListener("change", () => {
-    const file = fileInput.files && fileInput.files[0];
-    onPicked(file);
+    const files = fileInput.files ? Array.from(fileInput.files) : [];
+    fileInput.value = "";
+    if (files.length) onFilesPicked(files);
   });
 
   sendBtn.addEventListener("click", async () => {
-    if (!selectedFile || busy) return;
+    if (!selectedFiles.length || busy) return;
     const name = normalizeName(nameInput.value) || uploaderName;
     if (!name) {
       setStatus("Save your name first.", "err");
@@ -311,19 +376,43 @@
     cameraBtn.disabled = true;
     fileBtn.disabled = true;
     sendBtn.disabled = true;
-    setStatus("Uploading…", "");
+    const total = selectedFiles.length;
+    setStatus(total > 1 ? `Uploading ${total} photos…` : "Uploading…", "");
 
     const body = new FormData();
-    body.append("image", selectedFile, selectedFile.name || "photo.jpg");
+    selectedFiles.forEach(({ file }) => {
+      body.append("images", file, file.name || "photo.jpg");
+    });
     body.append("uploader_name", name);
 
     try {
       const res = await fetch("/api/upload", { method: "POST", body });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.ok) {
-        throw new Error(data.error || "Upload failed");
+        const firstError = data.errors && data.errors[0] && data.errors[0].error;
+        throw new Error(firstError || data.error || "Upload failed");
       }
-      setStatus("Sent! It will show up soon.", "ok");
+      const saved = Array.isArray(data.images)
+        ? data.images
+        : data.image
+        ? [data.image]
+        : [];
+      const failed = Array.isArray(data.errors) ? data.errors.length : 0;
+      const count = saved.length;
+      const label = count === 1 ? "photo" : "photos";
+      if (failed) {
+        setStatus(
+          `Sent ${count} ${label}. ${failed} could not be uploaded.`,
+          count ? "ok" : "err"
+        );
+      } else {
+        setStatus(
+          count === 1
+            ? "Sent 1 photo! It will show up soon."
+            : `Sent ${count} photos! They will show up soon.`,
+          "ok"
+        );
+      }
       hasSent = true;
       resetSelection();
     } catch (err) {
