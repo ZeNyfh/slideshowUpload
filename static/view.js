@@ -715,22 +715,50 @@
         const oldImg = oldEl.querySelector("img");
         const newImg = newEl.querySelector("img");
         const clean = { clipPath: "inset(0% 0 0% 0)", transform: "none", filter: "none", opacity: 1 };
+        const scan = fxEl("fx-scanlines");
         const jobs = [
-          play(oldEl, [{ ...clean, easing: "steps(1, end)" }, ...glitchFrames(light ? 3 : 9), { ...clean, opacity: 0 }], {
+          play(scan, [{ opacity: 0 }, { opacity: 1, offset: 0.1 }, { opacity: 1, offset: 0.85 }, { opacity: 0 }], {
+            duration: 1500,
+          }),
+          play(oldEl, [{ ...clean, easing: "steps(1, end)" }, ...glitchFrames(light ? 7 : 9), { ...clean, opacity: 0 }], {
             duration: 700,
           }),
-          play(newEl, [{ opacity: 0, easing: "steps(1, end)" }, ...glitchFrames(light ? 4 : 11), clean], {
+          play(newEl, [{ opacity: 0, easing: "steps(1, end)" }, ...glitchFrames(light ? 8 : 11), clean], {
             duration: 1000,
             delay: 450,
           }),
         ];
-        if (!light) {
-          const scan = fxEl("fx-scanlines");
+        if (light) {
+          // Cheap RGB look: colored overlays (no drop-shadow filters on the photo)
+          const red = fxEl("fx-rgb-band");
+          red.style.background = "rgba(255, 0, 70, 0.22)";
+          const cyan = fxEl("fx-rgb-band");
+          cyan.style.background = "rgba(0, 255, 230, 0.2)";
           jobs.push(
-            play(scan, [{ opacity: 0 }, { opacity: 1, offset: 0.1 }, { opacity: 1, offset: 0.85 }, { opacity: 0 }], {
-              duration: 1500,
-            })
+            play(
+              red,
+              [
+                { opacity: 0, transform: "translateX(0)" },
+                { opacity: 1, transform: "translateX(10px)", offset: 0.15, easing: "steps(1, end)" },
+                { opacity: 0.4, transform: "translateX(-6px)", offset: 0.35, easing: "steps(1, end)" },
+                { opacity: 1, transform: "translateX(8px)", offset: 0.55, easing: "steps(1, end)" },
+                { opacity: 0, transform: "translateX(0)" },
+              ],
+              { duration: 1500 }
+            ),
+            play(
+              cyan,
+              [
+                { opacity: 0, transform: "translateX(0)" },
+                { opacity: 1, transform: "translateX(-10px)", offset: 0.18, easing: "steps(1, end)" },
+                { opacity: 0.35, transform: "translateX(7px)", offset: 0.4, easing: "steps(1, end)" },
+                { opacity: 1, transform: "translateX(-8px)", offset: 0.58, easing: "steps(1, end)" },
+                { opacity: 0, transform: "translateX(0)" },
+              ],
+              { duration: 1500 }
+            )
           );
+        } else {
           if (oldImg) jobs.push(play(oldImg, [...rgbSplitFrames(8), { filter: "none" }], { duration: 700 }));
           if (newImg) jobs.push(play(newImg, [...rgbSplitFrames(10), { filter: "none" }], { duration: 1000, delay: 450 }));
         }
@@ -782,11 +810,12 @@
         const { w, h } = stageSize();
         const light = compat();
         const dusk = fxEl("fx-dusk");
-        const count = light ? (w < 700 ? 10 : 16) : w < 700 ? 26 : 46;
+        // Compat keeps a dense swarm; skip only the costliest per-bat extras
+        const count = light ? (w < 700 ? 20 : 32) : w < 700 ? 26 : 46;
         const flights = [];
         for (let i = 0; i < count; i++) {
           const bat = fxEl("fx-bat", BAT_SVG);
-          const size = rand(36, light ? 110 : 150);
+          const size = rand(36, light ? 130 : 150);
           bat.style.width = `${size}px`;
           const sx = -size - rand(0, w * 0.3);
           const sy = rand(0.35, 1.1) * h;
@@ -794,12 +823,11 @@
           const ey = sy - rand(0.45, 1.05) * h;
           const mx = (sx + ex) / 2;
           const my = (sy + ey) / 2 + rand(-0.15, 0.15) * h;
-          if (!light) {
-            bat.firstElementChild.animate(
-              [{ transform: "scaleY(1)" }, { transform: "scaleY(.25)" }, { transform: "scaleY(1)" }],
-              { duration: rand(130, 220), iterations: Infinity }
-            );
-          }
+          // Wing flap on every bat; slower in compat so the compositor isn't flooded
+          bat.firstElementChild.animate(
+            [{ transform: "scaleY(1)" }, { transform: "scaleY(.25)" }, { transform: "scaleY(1)" }],
+            { duration: light ? rand(220, 340) : rand(130, 220), iterations: Infinity }
+          );
           flights.push(
             play(
               bat,
@@ -997,20 +1025,20 @@
         const ring = fxEl("fx-portal");
         const newImg = newEl.querySelector("img");
         const opts = { duration: 1600, easing: "cubic-bezier(.7,0,.3,1)" };
-        // clipPath circle on full-bleed photos is costly; compat uses scale/opacity instead
+        // Compat: no clipPath, no photo scale/rotate, no ring spin — those drop frames hard
         if (compat()) {
+          const span = Math.min(r * 1.7, 1200);
           return Promise.all([
-            play(newEl, [{ opacity: 0, transform: "scale(0.15)" }, { opacity: 1, transform: "none" }], opts),
+            play(oldEl, [{ opacity: 1 }, { opacity: 0 }], { duration: 900, easing: "ease-in" }),
+            play(newEl, [{ opacity: 0 }, { opacity: 0, offset: 0.32 }, { opacity: 1 }], { duration: 1100 }),
             play(
               ring,
               [
-                { width: "0px", height: "0px", opacity: 1, transform: "translate(-50%, -50%) rotate(0deg)" },
-                { opacity: 1, offset: 0.85 },
-                { width: `${r * 2}px`, height: `${r * 2}px`, opacity: 0, transform: "translate(-50%, -50%) rotate(270deg)" },
+                { width: "12px", height: "12px", opacity: 0.95, transform: "translate(-50%, -50%)" },
+                { width: `${span}px`, height: `${span}px`, opacity: 0, transform: "translate(-50%, -50%)" },
               ],
-              opts
+              { duration: 1300, easing: "cubic-bezier(.7,0,.3,1)" }
             ),
-            play(oldEl, [{ opacity: 1, transform: "none" }, { opacity: 0, transform: "rotate(20deg) scale(.65)" }], opts),
           ]);
         }
         const jobs = [

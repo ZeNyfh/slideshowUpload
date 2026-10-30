@@ -810,7 +810,6 @@ body.compat-mode .fx-vines {
   filter: drop-shadow(0 0 2px #000) drop-shadow(0 0 8px rgba(90, 255, 110, 0.28));
 }
 
-body.compat-mode .fx-bat,
 body.compat-mode .fx-bolt,
 body.compat-mode .fx-cracks,
 body.compat-mode .fx-spider .spider,
@@ -818,15 +817,26 @@ body.compat-mode .fx-smoke {
   filter: none;
 }
 
+body.compat-mode .fx-bat {
+  /* One soft glow — full dual drop-shadow swarm is what tanked FPS */
+  filter: drop-shadow(0 0 4px rgba(255, 120, 30, 0.55));
+}
+
 body.compat-mode .fx-sigil {
   filter: drop-shadow(0 0 10px rgba(160, 0, 0, 0.8));
 }
 
 body.compat-mode .fx-portal {
-  box-shadow:
-    0 0 16px 4px rgba(140, 255, 60, 0.55),
-    0 0 40px 12px rgba(130, 40, 255, 0.35);
-  background: radial-gradient(circle, rgba(140, 255, 60, 0.2), rgba(150, 60, 255, 0.25) 55%, transparent 70%);
+  border-width: 4px;
+  box-shadow: 0 0 18px 3px rgba(140, 255, 60, 0.55);
+  background: transparent;
+  will-change: width, height, opacity;
+}
+
+body.compat-mode .fx-rgb-band {
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 body.compat-mode .fx-nosignal {
