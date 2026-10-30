@@ -66,13 +66,18 @@
             </label>
           </div>
           <label class="field">
-            <span>Size: <span id="qrSizeOut">18%</span> of screen height</span>
+            <span>Slideshow size: <span id="qrSizeOut">18%</span></span>
             <input type="range" id="qrSize" min="8" max="40" step="1" value="18" />
+          </label>
+          <label class="field">
+            <span>/qr page size: <span id="qrPageSizeOut">80%</span> (100% = max)</span>
+            <input type="range" id="qrPageSize" min="10" max="100" step="1" value="80" />
           </label>
           <label class="field">
             Label under the code
             <input type="text" id="qrLabel" maxlength="60" placeholder="(no label)" />
           </label>
+          <p class="muted">Fullscreen display page: <code>/qr</code> — uses this theme, label, and public URL.</p>
           <label class="field">
             Public URL (optional)
             <input type="text" id="qrBaseUrl" placeholder="Auto: this server's network address" />

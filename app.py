@@ -97,11 +97,13 @@ QR_THEMES = [
 ]
 QR_THEME_NAMES = [t["name"] for t in QR_THEMES]
 QR_CORNERS = ("top-left", "top-right", "bottom-left", "bottom-right")
-QR_SIZE_RANGE = (8, 40)  # percent of the display's shorter side
+QR_SIZE_RANGE = (8, 40)  # percent of the display's shorter side (/view overlay)
+QR_PAGE_SIZE_RANGE = (10, 100)  # percent of shorter viewport side (/qr page)
 QR_DEFAULTS = {
     "enabled": True,
     "corner": "bottom-right",
     "size": 18,
+    "page_size": 80,
     "theme": "classic",
     "label": "Scan to add your photo",
     "base_url": "",
@@ -231,6 +233,15 @@ def _validate_qr(raw: dict, current: dict) -> dict:
         if not lo <= size <= hi:
             raise ValueError(f"QR size must be {lo}–{hi}%")
         qr["size"] = size
+    if "page_size" in raw:
+        try:
+            page_size = int(raw["page_size"])
+        except (TypeError, ValueError):
+            raise ValueError("Invalid QR page size") from None
+        lo, hi = QR_PAGE_SIZE_RANGE
+        if not lo <= page_size <= hi:
+            raise ValueError(f"QR page size must be {lo}–{hi}%")
+        qr["page_size"] = page_size
     if "theme" in raw:
         if raw["theme"] not in QR_THEME_NAMES:
             raise ValueError("Invalid QR theme")
@@ -581,6 +592,11 @@ def view_page():
     return render_template("view.html", boot_id=BOOT_ID)
 
 
+@app.get("/qr")
+def qr_page():
+    return render_template("qr.html")
+
+
 @app.get("/admin/login")
 def admin_login_page():
     if _is_admin():
@@ -698,6 +714,7 @@ def api_images():
                 "available_transitions": TRANSITIONS,
                 "available_qr_themes": QR_THEMES,
                 "qr_size_range": QR_SIZE_RANGE,
+                "qr_page_size_range": QR_PAGE_SIZE_RANGE,
                 "images": images,
                 "priority_pending": len(state["priority_queue"]),
             }

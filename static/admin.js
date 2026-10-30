@@ -22,6 +22,8 @@
   const qrTheme = document.getElementById("qrTheme");
   const qrSize = document.getElementById("qrSize");
   const qrSizeOut = document.getElementById("qrSizeOut");
+  const qrPageSize = document.getElementById("qrPageSize");
+  const qrPageSizeOut = document.getElementById("qrPageSizeOut");
   const qrLabel = document.getElementById("qrLabel");
   const qrBaseUrl = document.getElementById("qrBaseUrl");
   const qrScreen = document.getElementById("qrScreen");
@@ -112,6 +114,9 @@
     if (!qrTheme.options.length && Array.isArray(data.available_qr_themes)) {
       for (const t of data.available_qr_themes) qrTheme.add(new Option(t.label, t.name));
       if (Array.isArray(data.qr_size_range)) [qrSize.min, qrSize.max] = data.qr_size_range;
+      if (Array.isArray(data.qr_page_size_range)) {
+        [qrPageSize.min, qrPageSize.max] = data.qr_page_size_range;
+      }
     }
     if (qrDirty || !data.qr) return;
     const key = JSON.stringify(data.qr);
@@ -121,6 +126,7 @@
     qrCorner.value = data.qr.corner;
     qrTheme.value = data.qr.theme;
     qrSize.value = data.qr.size;
+    qrPageSize.value = data.qr.page_size ?? 80;
     qrLabel.value = data.qr.label;
     qrBaseUrl.value = data.qr.base_url;
     updateQrPreview();
@@ -132,6 +138,7 @@
       corner: qrCorner.value,
       theme: qrTheme.value,
       size: Number(qrSize.value),
+      page_size: Number(qrPageSize.value),
       label: qrLabel.value,
       base_url: qrBaseUrl.value.trim(),
     };
@@ -142,6 +149,7 @@
     qrPreviewTimer = setTimeout(async () => {
       const qr = readQrForm();
       qrSizeOut.textContent = `${qr.size}%`;
+      qrPageSizeOut.textContent = `${qr.page_size}%`;
       qrScreen.dataset.corner = qr.corner;
       qrScreen.classList.toggle("is-off", !qr.enabled);
       // Display uses vmin of a 16:9 screen, i.e. a share of the preview's height
@@ -159,7 +167,7 @@
     }, 120);
   }
 
-  [qrEnabled, qrCorner, qrTheme, qrSize, qrLabel, qrBaseUrl].forEach((el) =>
+  [qrEnabled, qrCorner, qrTheme, qrSize, qrPageSize, qrLabel, qrBaseUrl].forEach((el) =>
     el.addEventListener("input", () => {
       qrDirty = true;
       setMsg(qrStatus, "Unsaved changes");

@@ -370,6 +370,28 @@ body.view-page {
   width: 100vw;
 }
 
+/* Standalone /qr page */
+body.qr-page {
+  background: #000;
+  overflow: hidden;
+  height: 100dvh;
+  width: 100vw;
+}
+
+.qr-page-stage {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #000;
+  padding: 1vmin;
+}
+
+.qr-page-stage .qr-card {
+  max-width: 100%;
+  max-height: 98dvh;
+}
+
 .stage {
   position: fixed;
   inset: 0;
