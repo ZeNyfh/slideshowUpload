@@ -38,7 +38,7 @@
     qr.addData(text);
     qr.make();
     const n = qr.getModuleCount();
-    const quiet = 2;
+    const quiet = 0;
     const size = n + quiet * 2;
 
     const eyeOrigins = [[0, 0], [0, n - 7], [n - 7, 0]];
