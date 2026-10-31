@@ -11,6 +11,7 @@ import socket
 import sys
 import threading
 import uuid
+import zipfile
 from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
@@ -24,6 +25,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_file,
     send_from_directory,
     session,
     url_for,
@@ -910,6 +912,38 @@ def api_admin_delete(image_id: str):
         _save_state(state)
 
     return jsonify({"ok": True})
+
+
+@app.get("/api/admin/export")
+@require_admin
+def api_admin_export():
+    """Zip every stored photo and download it as export.zip."""
+    with _lock:
+        state = _load_state()
+        images = list(state["images"])
+
+    upload_root = UPLOAD_DIR.resolve()
+    buf = io.BytesIO()
+    used: set[str] = set()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for img in images:
+            filename = img.get("filename") or ""
+            path = (UPLOAD_DIR / filename).resolve()
+            if not path.is_file() or upload_root not in path.parents:
+                continue
+            arcname = secure_filename(img.get("original_name") or "") or filename
+            if arcname in used:
+                arcname = f"{img['id'][:8]}-{arcname}"
+            used.add(arcname)
+            archive.write(path, arcname=arcname)
+
+    buf.seek(0)
+    return send_file(
+        buf,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name="export.zip",
+    )
 
 
 @app.post("/api/admin/clear")

@@ -11,6 +11,7 @@
   const grid = document.getElementById("grid");
   const count = document.getElementById("count");
   const clearAll = document.getElementById("clearAll");
+  const exportZip = document.getElementById("exportZip");
   const logoutBtn = document.getElementById("logoutBtn");
   const transitionMode = document.getElementById("transitionMode");
   const transitionList = document.getElementById("transitionList");
@@ -331,6 +332,10 @@
     if (!ensureAuth(res)) return;
     const data = await res.json();
     if (res.ok && data.ok) await load();
+  });
+
+  exportZip.addEventListener("click", () => {
+    window.location.href = "/api/admin/export";
   });
 
   clearAll.addEventListener("click", async () => {
