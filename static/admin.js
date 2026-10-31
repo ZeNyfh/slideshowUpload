@@ -4,6 +4,7 @@
   const durationStatus = document.getElementById("durationStatus");
   const playbackOrder = document.getElementById("playbackOrder");
   const compatMode = document.getElementById("compatMode");
+  const guestDownloads = document.getElementById("guestDownloads");
   let slideshowDirty = false;
   const dropzone = document.getElementById("dropzone");
   const bulkInput = document.getElementById("bulkInput");
@@ -62,6 +63,9 @@
       durationInput.value = data.slide_duration;
       if (data.playback_order) playbackOrder.value = data.playback_order;
       if (typeof data.compat_mode === "boolean") compatMode.checked = data.compat_mode;
+      if (typeof data.allow_guest_downloads === "boolean") {
+        guestDownloads.checked = data.allow_guest_downloads;
+      }
     }
     renderTransitions(data);
     renderQr(data);
@@ -249,6 +253,11 @@
     setMsg(durationStatus, "Unsaved changes");
   });
 
+  guestDownloads.addEventListener("change", () => {
+    slideshowDirty = true;
+    setMsg(durationStatus, "Unsaved changes");
+  });
+
   saveDuration.addEventListener("click", async () => {
     const slide_duration = Number(durationInput.value);
     setMsg(durationStatus, "Saving…");
@@ -260,6 +269,7 @@
           slide_duration,
           playback_order: playbackOrder.value,
           compat_mode: compatMode.checked,
+          allow_guest_downloads: guestDownloads.checked,
         }),
       });
       if (!ensureAuth(res)) return;
@@ -268,7 +278,8 @@
       slideshowDirty = false;
       const orderLabel = playbackOrder.options[playbackOrder.selectedIndex].text.split(" (")[0];
       const compatNote = data.compat_mode ? ", compatibility on" : "";
-      setMsg(durationStatus, `Saved: ${data.slide_duration}s, ${orderLabel}${compatNote}`, "ok");
+      const guestNote = data.allow_guest_downloads ? "" : ", guest downloads off";
+      setMsg(durationStatus, `Saved: ${data.slide_duration}s, ${orderLabel}${compatNote}${guestNote}`, "ok");
     } catch (err) {
       setMsg(durationStatus, err.message, "err");
     }

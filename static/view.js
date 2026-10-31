@@ -4,6 +4,13 @@
   const empty = document.getElementById("empty");
   const badge = document.getElementById("badge");
   const qrBox = document.getElementById("qr");
+  const controls = document.getElementById("controls");
+  const prevBtn = document.getElementById("prevBtn");
+  const nextBtn = document.getElementById("nextBtn");
+  const downloadBtn = document.getElementById("downloadBtn");
+  const downloadAllBtn = document.getElementById("downloadAllBtn");
+  const fullscreenBtn = document.getElementById("fullscreenBtn");
+  const playBtn = document.getElementById("playBtn");
 
   // ?transition=bats forces one transition (handy for testing on the display)
   const forcedTransition = new URLSearchParams(window.location.search).get("transition");
@@ -1642,6 +1649,7 @@
     duration: 5,
     transitions: Object.keys(TRANSITIONS),
     mode: "random",
+    guestDownloads: true,
   };
 
   function applyConfig(data) {
@@ -1655,7 +1663,11 @@
       document.body.classList.toggle("compat-mode", compatOn);
       if (compatOn) canvasQuality = Math.min(canvasQuality, 0.65);
     }
+    if (typeof data.allow_guest_downloads === "boolean") {
+      config.guestDownloads = data.allow_guest_downloads;
+    }
     if (data.qr) updateQr(data.qr);
+    updateControlAvailability();
   }
 
   let qrKey = "";
@@ -1832,6 +1844,8 @@
       applyConfig(data);
       if (!data.ok || data.empty || !data.image) {
         discard();
+        currentImage = null;
+        updateControlAvailability();
         await showEmpty(data.boot_id);
       } else {
         let slide = null;
@@ -1851,6 +1865,8 @@
         if (slide) {
           discard();
           empty.style.display = "none";
+          currentImage = data.image;
+          updateControlAvailability();
           if (data.from_priority) flashBadge();
           await transitionTo(slide, ready && ready.name, prepared);
           next = config.duration * 1000;
@@ -1866,14 +1882,236 @@
       discard();
       busy = false;
     }
-    schedule(next);
-    pending = prepareNext().catch(() => null);
+    if (deferredManual) {
+      const manual = deferredManual;
+      deferredManual = null;
+      showManualImage(manual);
+      return;
+    }
+    if (!manualMode) {
+      schedule(next);
+      pending = prepareNext().catch(() => null);
+    }
   }
 
   function schedule(ms) {
     if (timer) clearTimeout(timer);
+    timer = null;
+    if (manualMode) return;
     timer = setTimeout(tick, ms);
   }
+
+  /* ── View controls: hidden by default, revealed on interaction ────────────
+     A small toolbar in a top corner (download current, download all, browse
+     prev/next, fullscreen). Browsing pauses the auto-advance timer; the
+     slideshow resumes after inactivity or via the play button. */
+  let controlsTimer = null;
+  let currentImage = null;
+  let gallery = [];
+  let galleryFetchedAt = 0;
+  let manualMode = false;
+  let manualBusy = false;
+  let deferredManual = null;
+  let resumeTimer = null;
+  let revealPending = false;
+  let swipeStartX = null;
+  let swipeStartY = null;
+  let swipeStartT = 0;
+
+  function showControls() {
+    controls.classList.add("visible");
+    updateControlAvailability();
+    if (config.guestDownloads) getGallery().then(updateControlAvailability);
+    clearTimeout(controlsTimer);
+    controlsTimer = setTimeout(() => controls.classList.remove("visible"), 3500);
+  }
+
+  function updateControlAvailability() {
+    for (const id of ["prevBtn", "nextBtn", "downloadBtn", "downloadAllBtn", "playBtn"]) {
+      document.getElementById(id).hidden = !config.guestDownloads;
+    }
+    playBtn.hidden = !config.guestDownloads || !manualMode;
+    prevBtn.disabled = gallery.length < 2;
+    nextBtn.disabled = gallery.length < 2;
+    downloadBtn.disabled = !currentImage;
+    downloadAllBtn.disabled = !currentImage && gallery.length === 0;
+    fullscreenBtn.setAttribute("aria-pressed", document.fullscreenElement ? "true" : "false");
+  }
+
+  async function getGallery() {
+    const fresh = Date.now() - galleryFetchedAt < 60000;
+    if (fresh && gallery.length) return gallery;
+    try {
+      const res = await fetch("/api/gallery", { cache: "no-store" });
+      const data = await res.json();
+      if (data.ok && Array.isArray(data.images)) {
+        gallery = data.images;
+        galleryFetchedAt = Date.now();
+      }
+    } catch (_) {
+      // Keep whatever we had; the toolbar stays but prev/next may be disabled
+    }
+    return gallery;
+  }
+
+  function safeDownloadName(name) {
+    const cleaned = String(name || "")
+      .replace(/[\\/:*?"<>|]/g, "_")
+      .trim();
+    return (cleaned || "photo.jpg").toLowerCase().endsWith(".jpg") ? cleaned : `${cleaned || "photo"}.jpg`;
+  }
+
+  function downloadCurrent() {
+    if (!currentImage || !currentImage.url) return;
+    const name = safeDownloadName(currentImage.original_name || currentImage.url.split("/").pop());
+    const a = document.createElement("a");
+    a.href = currentImage.url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  function downloadAll() {
+    const a = document.createElement("a");
+    a.href = "/api/export";
+    a.download = "";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  function toggleFullscreen() {
+    const el = document.documentElement;
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else if (el.requestFullscreen) {
+      el.requestFullscreen().catch(() => {});
+    }
+  }
+
+  function resumeSlideshow() {
+    clearTimeout(resumeTimer);
+    resumeTimer = null;
+    deferredManual = null;
+    if (!manualMode) return;
+    manualMode = false;
+    updateControlAvailability();
+    schedule(0);
+  }
+
+  function scheduleResume() {
+    clearTimeout(resumeTimer);
+    resumeTimer = setTimeout(resumeSlideshow, 30000);
+  }
+
+  async function showManualImage(img) {
+    if (!img || manualBusy) return;
+    if (busy) {
+      manualMode = true;
+      deferredManual = img;
+      return;
+    }
+    manualMode = true;
+    manualBusy = true;
+    clearTimeout(timer);
+    timer = null;
+    clearTimeout(resumeTimer);
+    resumeTimer = null;
+    try {
+      const slide = await buildSlide(img);
+      empty.style.display = "none";
+      await transitionTo(slide, null, null);
+      currentImage = img;
+      updateControlAvailability();
+      scheduleResume();
+    } catch (_) {
+      // Keep showing whatever is on stage; don't leave the timer cancelled
+      if (!currentEl) await showEmpty();
+      scheduleResume();
+    } finally {
+      manualBusy = false;
+    }
+  }
+
+  async function navPrev() {
+    const list = await getGallery();
+    if (!list.length) return;
+    const i = currentImage ? gallery.findIndex((x) => x.id === currentImage.id) : -1;
+    const idx = i >= 0 ? i : 0;
+    showManualImage(list[(idx - 1 + list.length) % list.length]);
+  }
+
+  async function navNext() {
+    const list = await getGallery();
+    if (!list.length) return;
+    const i = currentImage ? gallery.findIndex((x) => x.id === currentImage.id) : -1;
+    const idx = i >= 0 ? i : 0;
+    showManualImage(list[(idx + 1) % list.length]);
+  }
+
+  prevBtn.addEventListener("click", navPrev);
+  nextBtn.addEventListener("click", navNext);
+  downloadBtn.addEventListener("click", downloadCurrent);
+  downloadAllBtn.addEventListener("click", downloadAll);
+  fullscreenBtn.addEventListener("click", toggleFullscreen);
+  playBtn.addEventListener("click", resumeSlideshow);
+  document.addEventListener("fullscreenchange", updateControlAvailability);
+
+  document.addEventListener(
+    "pointermove",
+    () => {
+      if (!revealPending) {
+        revealPending = true;
+        requestAnimationFrame(() => {
+          revealPending = false;
+          showControls();
+        });
+      }
+    },
+    { passive: true }
+  );
+
+  document.addEventListener(
+    "pointerdown",
+    (e) => {
+      showControls();
+      if (e.target.closest(".view-controls")) return;
+      swipeStartX = e.clientX;
+      swipeStartY = e.clientY;
+      swipeStartT = performance.now();
+    },
+    { passive: true }
+  );
+
+  document.addEventListener(
+    "pointerup",
+    (e) => {
+      if (swipeStartX == null) return;
+      const dx = e.clientX - swipeStartX;
+      const dy = e.clientY - swipeStartY;
+      const dt = performance.now() - swipeStartT;
+      swipeStartX = swipeStartY = null;
+      if (!controls.classList.contains("visible")) return;
+      if (dt < 800 && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+        if (dx < 0) navNext();
+        else navPrev();
+      }
+    },
+    { passive: true }
+  );
+
+  document.addEventListener("keydown", (e) => {
+    showControls();
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      if (!controls.classList.contains("visible")) return;
+      e.preventDefault();
+      if (e.key === "ArrowLeft") navPrev();
+      else navNext();
+    } else if (e.key === "f" || e.key === "F") {
+      toggleFullscreen();
+    }
+  });
 
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && !busy) schedule(0);
