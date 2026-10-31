@@ -8,9 +8,20 @@
   const prevBtn = document.getElementById("prevBtn");
   const nextBtn = document.getElementById("nextBtn");
   const downloadBtn = document.getElementById("downloadBtn");
-  const downloadAllBtn = document.getElementById("downloadAllBtn");
+  const galleryBtn = document.getElementById("galleryBtn");
   const fullscreenBtn = document.getElementById("fullscreenBtn");
   const playBtn = document.getElementById("playBtn");
+  const galleryOverlay = document.getElementById("galleryOverlay");
+  const galleryGrid = document.getElementById("galleryGrid");
+  const gallerySelectAllBtn = document.getElementById("gallerySelectAllBtn");
+  const galleryCount = document.getElementById("galleryCount");
+  const galleryDownloadBtn = document.getElementById("galleryDownloadBtn");
+  const galleryDownloadAllBtn = document.getElementById("galleryDownloadAllBtn");
+  const galleryCloseBtn = document.getElementById("galleryCloseBtn");
+  const galleryLightbox = document.getElementById("galleryLightbox");
+  const lightboxImg = document.getElementById("lightboxImg");
+  const lightboxDownloadBtn = document.getElementById("lightboxDownloadBtn");
+  const lightboxCloseBtn = document.getElementById("lightboxCloseBtn");
 
   // ?transition=bats forces one transition (handy for testing on the display)
   const forcedTransition = new URLSearchParams(window.location.search).get("transition");
@@ -1888,7 +1899,7 @@
       showManualImage(manual);
       return;
     }
-    if (!manualMode) {
+    if (!manualMode && !overlayOpen) {
       schedule(next);
       pending = prepareNext().catch(() => null);
     }
@@ -1897,7 +1908,7 @@
   function schedule(ms) {
     if (timer) clearTimeout(timer);
     timer = null;
-    if (manualMode) return;
+    if (manualMode || overlayOpen) return;
     timer = setTimeout(tick, ms);
   }
 
@@ -1917,6 +1928,9 @@
   let swipeStartX = null;
   let swipeStartY = null;
   let swipeStartT = 0;
+  let overlayOpen = false;
+  const selected = new Set();
+  let lightboxImage = null;
 
   function showControls() {
     controls.classList.add("visible");
@@ -1927,20 +1941,19 @@
   }
 
   function updateControlAvailability() {
-    for (const id of ["prevBtn", "nextBtn", "downloadBtn", "downloadAllBtn", "playBtn"]) {
+    for (const id of ["prevBtn", "nextBtn", "downloadBtn", "galleryBtn", "playBtn"]) {
       document.getElementById(id).hidden = !config.guestDownloads;
     }
     playBtn.hidden = !config.guestDownloads || !manualMode;
     prevBtn.disabled = gallery.length < 2;
     nextBtn.disabled = gallery.length < 2;
     downloadBtn.disabled = !currentImage;
-    downloadAllBtn.disabled = !currentImage && gallery.length === 0;
     fullscreenBtn.setAttribute("aria-pressed", document.fullscreenElement ? "true" : "false");
   }
 
-  async function getGallery() {
+  async function getGallery(refresh = false) {
     const fresh = Date.now() - galleryFetchedAt < 60000;
-    if (fresh && gallery.length) return gallery;
+    if (!refresh && fresh && gallery.length) return gallery;
     try {
       const res = await fetch("/api/gallery", { cache: "no-store" });
       const data = await res.json();
@@ -1972,14 +1985,134 @@
     a.remove();
   }
 
-  function downloadAll() {
+  function startZipDownload(url) {
     const a = document.createElement("a");
-    a.href = "/api/export";
+    a.href = url;
     a.download = "";
     document.body.appendChild(a);
     a.click();
     a.remove();
   }
+
+  /* ── Gallery overlay: browse every photo, select the ones you want, download ─ */
+  async function openGallery() {
+    await getGallery(true);
+    selected.clear();
+    overlayOpen = true;
+    clearTimeout(timer);
+    timer = null;
+    galleryOverlay.hidden = false;
+    renderGallery();
+  }
+
+  function closeGallery() {
+    selected.clear();
+    overlayOpen = false;
+    galleryOverlay.hidden = true;
+    closeLightbox();
+    schedule(0);
+  }
+
+  function renderGallery() {
+    galleryGrid.textContent = "";
+    for (const img of gallery) {
+      const tile = document.createElement("div");
+      tile.className = "gallery-tile" + (selected.has(img.id) ? " selected" : "");
+      tile.dataset.id = img.id;
+
+      const picture = document.createElement("img");
+      picture.src = img.url;
+      picture.alt = img.uploader_name || "";
+      picture.loading = "lazy";
+
+      const tick = document.createElement("button");
+      tick.type = "button";
+      tick.className = "gallery-tick";
+      tick.setAttribute("aria-label", selected.has(img.id) ? "Deselect" : "Select");
+      tick.textContent = "✓";
+
+      const name = document.createElement("div");
+      name.className = "gallery-name";
+      name.textContent = img.uploader_name || img.original_name || "Photo";
+
+      tile.append(picture, tick, name);
+      galleryGrid.appendChild(tile);
+    }
+    updateGalleryState();
+  }
+
+  function updateGalleryState() {
+    galleryGrid.querySelectorAll(".gallery-tile").forEach((tile) => {
+      const on = selected.has(tile.dataset.id);
+      tile.classList.toggle("selected", on);
+      const tick = tile.querySelector(".gallery-tick");
+      if (tick) tick.setAttribute("aria-label", on ? "Deselect" : "Select");
+    });
+    const n = selected.size;
+    galleryCount.textContent = n ? `${n} selected` : "0 selected";
+    galleryDownloadBtn.disabled = n === 0;
+    galleryDownloadBtn.textContent = n ? `Download selected (${n})` : "Download selected";
+    gallerySelectAllBtn.textContent =
+      gallery.length > 0 && n === gallery.length ? "Deselect all" : "Select all";
+    gallerySelectAllBtn.disabled = gallery.length === 0;
+  }
+
+  function toggleSelected(id) {
+    if (selected.has(id)) selected.delete(id);
+    else selected.add(id);
+    updateGalleryState();
+  }
+
+  function downloadSelected() {
+    if (!selected.size) return;
+    const params = [...selected].map((id) => `ids=${encodeURIComponent(id)}`).join("&");
+    startZipDownload(`/api/export?${params}`);
+  }
+
+  function openLightbox(img) {
+    lightboxImage = img;
+    lightboxImg.src = img.url;
+    lightboxDownloadBtn.hidden = false;
+    galleryLightbox.hidden = false;
+  }
+
+  function closeLightbox() {
+    lightboxImage = null;
+    lightboxImg.removeAttribute("src");
+    galleryLightbox.hidden = true;
+  }
+
+  galleryBtn.addEventListener("click", openGallery);
+  galleryCloseBtn.addEventListener("click", closeGallery);
+  gallerySelectAllBtn.addEventListener("click", () => {
+    const all = gallery.length > 0 && selected.size === gallery.length;
+    selected.clear();
+    if (!all) gallery.forEach((img) => selected.add(img.id));
+    updateGalleryState();
+  });
+  galleryDownloadBtn.addEventListener("click", downloadSelected);
+  galleryDownloadAllBtn.addEventListener("click", () => startZipDownload("/api/export"));
+  lightboxDownloadBtn.addEventListener("click", () => {
+    if (!lightboxImage) return;
+    const name = safeDownloadName(lightboxImage.original_name || lightboxImage.url.split("/").pop());
+    const a = document.createElement("a");
+    a.href = lightboxImage.url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  });
+  lightboxCloseBtn.addEventListener("click", closeLightbox);
+  galleryOverlay.addEventListener("click", (e) => {
+    const tile = e.target.closest(".gallery-tile");
+    if (!tile) return;
+    if (e.target.closest(".gallery-tick")) {
+      toggleSelected(tile.dataset.id);
+      return;
+    }
+    const img = gallery.find((x) => x.id === tile.dataset.id);
+    if (img) openLightbox(img);
+  });
 
   function toggleFullscreen() {
     const el = document.documentElement;
@@ -2053,7 +2186,6 @@
   prevBtn.addEventListener("click", navPrev);
   nextBtn.addEventListener("click", navNext);
   downloadBtn.addEventListener("click", downloadCurrent);
-  downloadAllBtn.addEventListener("click", downloadAll);
   fullscreenBtn.addEventListener("click", toggleFullscreen);
   playBtn.addEventListener("click", resumeSlideshow);
   document.addEventListener("fullscreenchange", updateControlAvailability);
@@ -2092,6 +2224,7 @@
       const dy = e.clientY - swipeStartY;
       const dt = performance.now() - swipeStartT;
       swipeStartX = swipeStartY = null;
+      if (overlayOpen) return;
       if (!controls.classList.contains("visible")) return;
       if (dt < 800 && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.4) {
         if (dx < 0) navNext();
@@ -2102,8 +2235,19 @@
   );
 
   document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      if (!galleryLightbox.hidden) {
+        closeLightbox();
+        return;
+      }
+      if (!galleryOverlay.hidden) {
+        closeGallery();
+        return;
+      }
+    }
     showControls();
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      if (overlayOpen) return;
       if (!controls.classList.contains("visible")) return;
       e.preventDefault();
       if (e.key === "ArrowLeft") navPrev();

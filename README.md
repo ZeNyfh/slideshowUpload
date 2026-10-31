@@ -52,7 +52,7 @@ Move the mouse (or touch / press a key) and a small toolbar appears in a top cor
 
 - **‹ / ›** browse photos manually; the slideshow pauses while browsing and auto-resumes after ~30s (or tap the play button).
 - **Download current** photo (slideshow copy, original filename if known).
-- **Download all** photos as `slideshow-photos.zip`.
+- **Gallery (grid icon)** opens a full-screen gallery of every photo. Tap the ✓ on photos to select them and hit **Download selected (n)** for a zip of just those, or use **Select all / Deselect all**. Click a photo to view it full-size and download it directly. **Download all** grabs everything as `slideshow-photos.zip`.
 - **Fullscreen** toggle (also `F`). Arrow keys and left/right swipes browse too.
 
-This feature is optional: uncheck *Let guests download and browse photos from the slideshow* in `/admin`. When off, the toolbar (except fullscreen) is hidden and the public endpoints `GET /api/export` and `GET /api/gallery` return 403. `GET /api/export` streams a zip of every photo; `GET /api/gallery` lists them newest-first for browser navigation.
+This feature is optional: uncheck *Let guests download and browse photos from the slideshow* in `/admin`. When off, the toolbar (except fullscreen) is hidden and the public endpoints `GET /api/export` and `GET /api/gallery` return 403. `GET /api/export` streams a zip of every photo (or just those named by repeated `?ids=<photo-id>` params for selected downloads); `GET /api/gallery` lists them newest-first for the gallery and browsing.

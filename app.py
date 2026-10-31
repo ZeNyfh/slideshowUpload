@@ -921,14 +921,20 @@ def api_admin_delete(image_id: str):
 
 @app.get("/api/export")
 def api_export():
-    """Public zip of every stored photo, for guests to grab after the event."""
+    """Public zip of every photo (or just the requested ?ids=...) for guests."""
     with _lock:
         state = _load_state()
         if not state.get("allow_guest_downloads", True):
             return jsonify({"ok": False, "error": "Guest downloads are disabled"}), 403
         _prune_missing(state)
         _save_state(state)
-        buf = _build_export_zip(state)
+        images = state["images"]
+        ids = request.args.getlist("ids")
+        if ids:
+            wanted = set(ids)
+            # Keep gallery order (newest first)
+            images = [img for img in reversed(images) if img["id"] in wanted]
+        buf = _build_export_zip(images)
     return send_file(
         buf,
         mimetype="application/zip",
@@ -950,13 +956,14 @@ def api_gallery():
     return jsonify({"ok": True, "images": images})
 
 
-def _build_export_zip(state: dict) -> io.BytesIO:
-    """Zip every stored photo, preferring original filenames, deduped by id prefix."""
+def _build_export_zip(images: list) -> io.BytesIO:
+    """Zip the given images' files, preferring original filenames, deduped by id prefix.
+    images must already be pruned/normalised (callers prune missing files first)."""
     upload_root = UPLOAD_DIR.resolve()
     buf = io.BytesIO()
     used: set[str] = set()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for img in state["images"]:
+        for img in images:
             filename = img.get("filename") or ""
             path = (UPLOAD_DIR / filename).resolve()
             if not path.is_file() or upload_root not in path.parents:
@@ -977,7 +984,8 @@ def api_admin_export():
     """Zip every stored photo and download it as export.zip."""
     with _lock:
         state = _load_state()
-        buf = _build_export_zip(state)
+        _prune_missing(state)
+        buf = _build_export_zip(state["images"])
     return send_file(
         buf,
         mimetype="application/zip",
