@@ -10,17 +10,24 @@
   const downloadBtn = document.getElementById("downloadBtn");
   const galleryBtn = document.getElementById("galleryBtn");
   const fullscreenBtn = document.getElementById("fullscreenBtn");
-  const playBtn = document.getElementById("playBtn");
+  const cogBtn = document.getElementById("cogBtn");
+  const settingsPanel = document.getElementById("settingsPanel");
+  const settingsCloseBtn = document.getElementById("settingsCloseBtn");
+  const settingsDuration = document.getElementById("settingsDuration");
+  const settingsDurationNum = document.getElementById("settingsDurationNum");
+  const settingsResetBtn = document.getElementById("settingsResetBtn");
   const galleryOverlay = document.getElementById("galleryOverlay");
   const galleryGrid = document.getElementById("galleryGrid");
+  const galleryTotal = document.getElementById("galleryTotal");
   const gallerySelectAllBtn = document.getElementById("gallerySelectAllBtn");
   const galleryCount = document.getElementById("galleryCount");
   const galleryDownloadBtn = document.getElementById("galleryDownloadBtn");
   const galleryDownloadAllBtn = document.getElementById("galleryDownloadAllBtn");
-  const galleryCloseBtn = document.getElementById("galleryCloseBtn");
+  const galleryDoneBtn = document.getElementById("galleryDoneBtn");
   const galleryLightbox = document.getElementById("galleryLightbox");
   const lightboxImg = document.getElementById("lightboxImg");
   const lightboxDownloadBtn = document.getElementById("lightboxDownloadBtn");
+  const lightboxBackBtn = document.getElementById("lightboxBackBtn");
   const lightboxCloseBtn = document.getElementById("lightboxCloseBtn");
 
   // ?transition=bats forces one transition (handy for testing on the display)
@@ -1666,6 +1673,7 @@
   function applyConfig(data) {
     if (typeof data.slide_duration === "number" && data.slide_duration >= 1) {
       config.duration = data.slide_duration;
+      applyLocalDuration();
     }
     if (Array.isArray(data.transitions)) config.transitions = data.transitions;
     if (data.transition_mode) config.mode = data.transition_mode;
@@ -1899,7 +1907,7 @@
       showManualImage(manual);
       return;
     }
-    if (!manualMode && !overlayOpen) {
+    if (!overlayOpen) {
       schedule(next);
       pending = prepareNext().catch(() => null);
     }
@@ -1908,26 +1916,26 @@
   function schedule(ms) {
     if (timer) clearTimeout(timer);
     timer = null;
-    if (manualMode || overlayOpen) return;
+    if (overlayOpen) return;
     timer = setTimeout(tick, ms);
   }
 
   /* ── View controls: hidden by default, revealed on interaction ────────────
-     A small toolbar in a top corner (download current, download all, browse
-     prev/next, fullscreen). Browsing pauses the auto-advance timer; the
-     slideshow resumes after inactivity or via the play button. */
+     A small toolbar in a top corner (download current, gallery, browse
+     prev/next, fullscreen, display settings). Browsing doesn't pause the
+     slideshow; the gallery and settings panel do. */
+  const LOCAL_DURATION_KEY = "slideshow.localDuration";
   let controlsTimer = null;
   let currentImage = null;
   let gallery = [];
   let galleryFetchedAt = 0;
-  let manualMode = false;
   let manualBusy = false;
   let deferredManual = null;
-  let resumeTimer = null;
   let revealPending = false;
   let swipeStartX = null;
   let swipeStartY = null;
   let swipeStartT = 0;
+  let settingsOpen = false;
   let overlayOpen = false;
   const selected = new Set();
   let lightboxImage = null;
@@ -1937,14 +1945,15 @@
     updateControlAvailability();
     if (config.guestDownloads) getGallery().then(updateControlAvailability);
     clearTimeout(controlsTimer);
-    controlsTimer = setTimeout(() => controls.classList.remove("visible"), 3500);
+    controlsTimer = setTimeout(() => {
+      if (!settingsOpen) controls.classList.remove("visible");
+    }, 3500);
   }
 
   function updateControlAvailability() {
-    for (const id of ["prevBtn", "nextBtn", "downloadBtn", "galleryBtn", "playBtn"]) {
+    for (const id of ["prevBtn", "nextBtn", "downloadBtn", "galleryBtn"]) {
       document.getElementById(id).hidden = !config.guestDownloads;
     }
-    playBtn.hidden = !config.guestDownloads || !manualMode;
     prevBtn.disabled = gallery.length < 2;
     nextBtn.disabled = gallery.length < 2;
     downloadBtn.disabled = !currentImage;
@@ -1994,6 +2003,61 @@
     a.remove();
   }
 
+  /* ── Local display settings (per browser, never global) ──────────────────── */
+  function localDuration() {
+    try {
+      const raw = Number(localStorage.getItem(LOCAL_DURATION_KEY));
+      return Number.isFinite(raw) && raw >= 1 && raw <= 60 ? raw : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function syncDurationInputs(value) {
+    settingsDuration.value = value;
+    settingsDurationNum.value = value;
+  }
+
+  function applyLocalDuration() {
+    const raw = localDuration();
+    if (raw) config.duration = raw;
+    syncDurationInputs(raw || config.duration);
+    settingsResetBtn.disabled = raw == null;
+  }
+
+  function setLocalDuration(value) {
+    const v = Math.max(1, Math.min(60, Math.round(value)));
+    syncDurationInputs(v);
+    try {
+      localStorage.setItem(LOCAL_DURATION_KEY, String(v));
+    } catch (_) {
+      // Private mode: apply for this session only
+    }
+    config.duration = v;
+    settingsResetBtn.disabled = false;
+  }
+
+  function clearLocalDuration() {
+    try {
+      localStorage.removeItem(LOCAL_DURATION_KEY);
+    } catch (_) {
+      /* ignore */
+    }
+    applyLocalDuration(); // applies (now null) → keeps current server duration
+  }
+
+  function openSettings() {
+    settingsOpen = true;
+    applyLocalDuration();
+    settingsPanel.hidden = false;
+    showControls();
+  }
+
+  function closeSettings() {
+    settingsOpen = false;
+    settingsPanel.hidden = true;
+  }
+
   /* ── Gallery overlay: browse every photo, select the ones you want, download ─ */
   async function openGallery() {
     await getGallery(true);
@@ -2001,6 +2065,7 @@
     overlayOpen = true;
     clearTimeout(timer);
     timer = null;
+    closeSettings();
     galleryOverlay.hidden = false;
     renderGallery();
   }
@@ -2015,6 +2080,7 @@
 
   function renderGallery() {
     galleryGrid.textContent = "";
+    galleryTotal.textContent = gallery.length ? `· ${gallery.length}` : "";
     for (const img of gallery) {
       const tile = document.createElement("div");
       tile.className = "gallery-tile" + (selected.has(img.id) ? " selected" : "");
@@ -2083,7 +2149,7 @@
   }
 
   galleryBtn.addEventListener("click", openGallery);
-  galleryCloseBtn.addEventListener("click", closeGallery);
+  galleryDoneBtn.addEventListener("click", closeGallery);
   gallerySelectAllBtn.addEventListener("click", () => {
     const all = gallery.length > 0 && selected.size === gallery.length;
     selected.clear();
@@ -2102,6 +2168,7 @@
     a.click();
     a.remove();
   });
+  lightboxBackBtn.addEventListener("click", closeLightbox);
   lightboxCloseBtn.addEventListener("click", closeLightbox);
   galleryOverlay.addEventListener("click", (e) => {
     const tile = e.target.closest(".gallery-tile");
@@ -2113,6 +2180,42 @@
     const img = gallery.find((x) => x.id === tile.dataset.id);
     if (img) openLightbox(img);
   });
+  // Clicking the dark area around the lightbox photo goes back to the gallery
+  galleryLightbox.addEventListener("click", (e) => {
+    if (!e.target.closest("img") && !e.target.closest("button")) closeLightbox();
+  });
+
+  /* Display settings */
+  cogBtn.addEventListener("click", () => {
+    if (settingsOpen) closeSettings();
+    else openSettings();
+  });
+  settingsCloseBtn.addEventListener("click", closeSettings);
+  settingsDuration.addEventListener("input", () => {
+    const v = Number(settingsDuration.value) || 5;
+    setLocalDuration(v);
+    showControls(); // keep the panel + toolbar visible while adjusting
+  });
+  settingsDurationNum.addEventListener("input", () => {
+    const v = Number(settingsDurationNum.value);
+    if (Number.isFinite(v) && v >= 1 && v <= 60) {
+      setLocalDuration(v);
+    }
+  });
+  settingsDurationNum.addEventListener("change", () => {
+    const v = Number(settingsDurationNum.value);
+    setLocalDuration(Number.isFinite(v) ? v : config.duration);
+  });
+  settingsResetBtn.addEventListener("click", () => {
+    clearLocalDuration();
+    showControls();
+  });
+  // Clicking outside the panel + toolbar dismisses it, like closing a menu
+  document.addEventListener("pointerdown", (e) => {
+    if (!settingsOpen) return;
+    if (e.target.closest("#settingsPanel") || e.target.closest("#controls")) return;
+    closeSettings();
+  });
 
   function toggleFullscreen() {
     const el = document.documentElement;
@@ -2123,48 +2226,43 @@
     }
   }
 
-  function resumeSlideshow() {
-    clearTimeout(resumeTimer);
-    resumeTimer = null;
-    deferredManual = null;
-    if (!manualMode) return;
-    manualMode = false;
-    updateControlAvailability();
-    schedule(0);
+  /** Remove the pre-prepared "next" slide so a manual skip doesn't leave it behind. */
+  function dropPrepared() {
+    if (!pending) return;
+    const p = pending;
+    pending = null;
+    p.then((prepared) => {
+      if (prepared && prepared.slide && prepared.slide.isConnected) {
+        prepared.slide.remove();
+        stage.querySelectorAll(".piece").forEach((el) => el.remove());
+      }
+    }).catch(() => {});
   }
 
-  function scheduleResume() {
-    clearTimeout(resumeTimer);
-    resumeTimer = setTimeout(resumeSlideshow, 30000);
-  }
-
+  /* Manual skip: show the requested photo and keep the slideshow running —
+     the normal timer just restarts, so nothing pauses and nothing is stored. */
   async function showManualImage(img) {
     if (!img || manualBusy) return;
     if (busy) {
-      manualMode = true;
       deferredManual = img;
       return;
     }
-    manualMode = true;
     manualBusy = true;
     clearTimeout(timer);
     timer = null;
-    clearTimeout(resumeTimer);
-    resumeTimer = null;
     try {
       const slide = await buildSlide(img);
       empty.style.display = "none";
       await transitionTo(slide, null, null);
       currentImage = img;
       updateControlAvailability();
-      scheduleResume();
     } catch (_) {
-      // Keep showing whatever is on stage; don't leave the timer cancelled
       if (!currentEl) await showEmpty();
-      scheduleResume();
     } finally {
       manualBusy = false;
     }
+    dropPrepared();
+    schedule(config.duration * 1000);
   }
 
   async function navPrev() {
@@ -2187,7 +2285,6 @@
   nextBtn.addEventListener("click", navNext);
   downloadBtn.addEventListener("click", downloadCurrent);
   fullscreenBtn.addEventListener("click", toggleFullscreen);
-  playBtn.addEventListener("click", resumeSlideshow);
   document.addEventListener("fullscreenchange", updateControlAvailability);
 
   document.addEventListener(
@@ -2209,6 +2306,7 @@
     (e) => {
       showControls();
       if (e.target.closest(".view-controls")) return;
+      if (e.target.closest("#settingsPanel")) return;
       swipeStartX = e.clientX;
       swipeStartY = e.clientY;
       swipeStartT = performance.now();
@@ -2236,6 +2334,10 @@
 
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
+      if (settingsOpen) {
+        closeSettings();
+        return;
+      }
       if (!galleryLightbox.hidden) {
         closeLightbox();
         return;
@@ -2261,5 +2363,6 @@
     if (!document.hidden && !busy) schedule(0);
   });
 
+  applyLocalDuration();
   tick();
 })();

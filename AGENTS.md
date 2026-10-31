@@ -53,8 +53,9 @@ Uses **waitress** in production (handles large bodies); falls back to Flask dev 
 - State changes go through `_load_state()` → modify → `_save_state()` under `_lock`.
 - New transitions added to `TRANSITIONS` in `app.py` must also have keys in `static/view.js`.
 - QR theme keys must match entries in both `app.py` (`QR_THEMES`) and `static/qr.js`.
-- `/view` can pause the slideshow for manual browsing (see `manualMode` / `showManualImage` in `static/view.js`); tick() reaches out to a public gallery/export API gated by the `allow_guest_downloads` state flag.
+- `/view` manual skip just shows the photo and restarts the normal timer (see `showManualImage` / `dropPrepared` in `static/view.js`); only the gallery opens pause the slideshow (`overlayOpen`), served by the public gallery/export API gated by the `allow_guest_downloads` state flag.
 - The hidden `/view` toolbar (id `controls`) is revealed on interaction; keep new guest-facing /view features in that toolbar, gated by `allow_guest_downloads`. The gallery overlay (`#galleryOverlay`) selects photos and downloads a zip via `GET /api/export?ids=<id>&ids=<id>…`.
+- `/view` has a **local-only** display settings panel (`#settingsPanel`) storing seconds-per-photo in `localStorage` (`slideshow.localDuration`); it must never be serialized to `data/state.json` or the admin config — it deliberately overrides the server duration on that screen only.
 
 ## Testing
 

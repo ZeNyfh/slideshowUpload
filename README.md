@@ -50,9 +50,11 @@ The code opens the site root (e.g. `http://192.168.1.70:8123/`), built from the 
 
 Move the mouse (or touch / press a key) and a small toolbar appears in a top corner of the slideshow — it fades back after ~3.5s so the display stays clean:
 
-- **‹ / ›** browse photos manually; the slideshow pauses while browsing and auto-resumes after ~30s (or tap the play button).
+- **‹ / ›** browse photos manually — the slideshow just skips to that photo and keeps auto-advancing; nothing pauses.
 - **Download current** photo (slideshow copy, original filename if known).
-- **Gallery (grid icon)** opens a full-screen gallery of every photo. Tap the ✓ on photos to select them and hit **Download selected (n)** for a zip of just those, or use **Select all / Deselect all**. Click a photo to view it full-size and download it directly. **Download all** grabs everything as `slideshow-photos.zip`.
+- **Gallery (grid icon)** opens a full-screen gallery of every photo — its header explains you can pick and download. Tap the ✓ on photos to select them and hit **Download selected (n)** for a zip of just those, or use **Select all / Deselect all**. Click a photo to view it full-size (click the dark area or **← All photos**/**Done** to go back) and download it directly. **Download all** grabs everything as `slideshow-photos.zip`.
 - **Fullscreen** toggle (also `F`). Arrow keys and left/right swipes browse too.
+- **Display settings (cog)** lets you change seconds-per-photo *for this screen only* — stored in the browser (`localStorage`), never sent to the server or shared. Drag the slider or **type a number** (1–60). Use **Reset to default** to go back to the admin-set duration.
+- Everything here is touch-optimised and works well on phones and small screens.
 
-This feature is optional: uncheck *Let guests download and browse photos from the slideshow* in `/admin`. When off, the toolbar (except fullscreen) is hidden and the public endpoints `GET /api/export` and `GET /api/gallery` return 403. `GET /api/export` streams a zip of every photo (or just those named by repeated `?ids=<photo-id>` params for selected downloads); `GET /api/gallery` lists them newest-first for the gallery and browsing.
+This feature is optional: uncheck *Let guests download and browse photos from the slideshow* in `/admin`. When off, the toolbar (except fullscreen, settings and browsing) is hidden and the public endpoints `GET /api/export` and `GET /api/gallery` return 403. `GET /api/export` streams a zip of every photo (or just those named by repeated `?ids=<photo-id>` params for selected downloads); `GET /api/gallery` lists them newest-first for the gallery and browsing.
