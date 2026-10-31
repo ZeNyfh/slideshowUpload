@@ -178,6 +178,7 @@ def _default_state() -> dict:
         "transition_mode": "random",
         "playback_order": "sequence",
         "compat_mode": False,
+        "allow_guest_downloads": True,
         "qr": dict(QR_DEFAULTS),
         "images": [],
         "priority_queue": [],
@@ -203,6 +204,7 @@ def _display_config(state: dict) -> dict:
         "transition_mode": state["transition_mode"],
         "playback_order": state["playback_order"],
         "compat_mode": bool(state.get("compat_mode")),
+        "allow_guest_downloads": bool(state.get("allow_guest_downloads", True)),
         "qr": state["qr"],
         "boot_id": BOOT_ID,
     }
@@ -870,6 +872,9 @@ def api_admin_config():
     if "compat_mode" in payload:
         updates["compat_mode"] = bool(payload["compat_mode"])
 
+    if "allow_guest_downloads" in payload:
+        updates["allow_guest_downloads"] = bool(payload["allow_guest_downloads"])
+
     if "qr" in payload:
         with _lock:
             current_qr = _load_state()["qr"]
@@ -914,14 +919,46 @@ def api_admin_delete(image_id: str):
     return jsonify({"ok": True})
 
 
-@app.get("/api/admin/export")
-@require_admin
-def api_admin_export():
-    """Zip every stored photo and download it as export.zip."""
+@app.get("/api/export")
+def api_export():
+    """Public zip of every photo (or just the requested ?ids=...) for guests."""
     with _lock:
         state = _load_state()
-        images = list(state["images"])
+        if not state.get("allow_guest_downloads", True):
+            return jsonify({"ok": False, "error": "Guest downloads are disabled"}), 403
+        _prune_missing(state)
+        _save_state(state)
+        images = state["images"]
+        ids = request.args.getlist("ids")
+        if ids:
+            wanted = set(ids)
+            # Keep gallery order (newest first)
+            images = [img for img in reversed(images) if img["id"] in wanted]
+        buf = _build_export_zip(images)
+    return send_file(
+        buf,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name="slideshow-photos.zip",
+    )
 
+
+@app.get("/api/gallery")
+def api_gallery():
+    """Public list of every photo (newest first) so /view can browse them."""
+    with _lock:
+        state = _load_state()
+        if not state.get("allow_guest_downloads", True):
+            return jsonify({"ok": False, "error": "Guest browsing is disabled"}), 403
+        _prune_missing(state)
+        _save_state(state)
+        images = [_public_image(img) for img in reversed(state["images"])]
+    return jsonify({"ok": True, "images": images})
+
+
+def _build_export_zip(images: list) -> io.BytesIO:
+    """Zip the given images' files, preferring original filenames, deduped by id prefix.
+    images must already be pruned/normalised (callers prune missing files first)."""
     upload_root = UPLOAD_DIR.resolve()
     buf = io.BytesIO()
     used: set[str] = set()
@@ -938,6 +975,17 @@ def api_admin_export():
             archive.write(path, arcname=arcname)
 
     buf.seek(0)
+    return buf
+
+
+@app.get("/api/admin/export")
+@require_admin
+def api_admin_export():
+    """Zip every stored photo and download it as export.zip."""
+    with _lock:
+        state = _load_state()
+        _prune_missing(state)
+        buf = _build_export_zip(state["images"])
     return send_file(
         buf,
         mimetype="application/zip",
